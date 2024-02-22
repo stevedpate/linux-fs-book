@@ -1,0 +1,5 @@
+dd if=/dev/zero of=~/mydevice.img bs=1024k count=10
+sudo losetup --find --show mydevice.img 
+sudo mkfs -t ext4 /dev/loop2
+sudo mount /dev/loop2 /mnt
+

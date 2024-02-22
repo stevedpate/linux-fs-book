@@ -1,0 +1,158 @@
+.gdbinit
+
+    add-auto-load-safe-path /home/spate/linux-5.19.17/scripts/gdb/vmlinux-gdb.py
+
+    set print pretty on   # or off
+    set pagination off    # or on
+
+    define lconn
+        target remote tcp:192.168.64.1:1234
+    end
+
+--------------------------------------------------------------------------------
+
+Module loading:
+
+    # cd /sys/module/spfs/sections
+    # cat .text .rodata .data .bss .text
+
+    (gdb) add-symbol-file /home/spate/spfs/kern/spfs.ko 0xffffffffa06aa000 \
+            -s .rodata 0xffffffffa06ac080 -s .data  0xffffffffa06ad040 \
+            -s .bss 0xffffffffa06adf80 -s .text.unlikely 0xffffffffa06aa3d8
+
+--------------------------------------------------------------------------------
+
+Breakpoints:
+
+    (gdb) br do_filp_open if $_streq(pathname->name, "lorem-ipsum")
+    (gdb) br do_sys_openat2 if $_streq(filename, "lorem-ipsum")
+    (gdb) br link_path_walk if $_streq(name, "/home/spate/spfs/kern/spfs.ko")
+
+--------------------------------------------------------------------------------
+
+Loopback device setup:
+
+    $ dd if=/dev/zero of=~/mydevice.img bs=1024k
+    $ losetup --find --show mydevice.img
+    /dev/loop7
+
+--------------------------------------------------------------------------------
+
+To get started:
+
+    $ cd ~/linux-5.19.17
+    $ gdb vmlinux
+    (gdb) target remote tcp:192.168.64.8:1234
+
+To load the lx commands see .gdbrc:
+
+    (gdb) apropos lx
+
+displays them all.
+
+--------------------------------------------------------------------------------
+
+To get nice structure layout:
+
+    (gdb) set print pretty on   # or off
+    (gdb) set pagination off    # or on
+
+--------------------------------------------------------------------------------
+
+Current process task_struct
+
+    (gdb) p $lx_current()
+    (gdb) p $lx_current()->pid      # PID
+
+    (gdb) p *$lx_current()->fs                           # root and CWD
+    (gdb) p $lx_current()->fs->root.dentry->d_name.name  # root
+    (gdb) p $lx_current()->fs->pwd.dentry->d_name.name   # CWD
+
+To look for a process:
+
+    (gdb) lx-ps
+
+To search for a specific process:
+
+    (gdb) pipe lx-ps | grep spate
+    0xffff0000ee0b3240 1051  open-spate
+
+To then display the task_struct for this process:
+
+    (gdb) print *(struct task_struct *)0xffff0000ee0b3240
+
+or specific fields:
+
+    (gdb) print ((struct task_struct *)0xffff0000ee0b3240)->files
+    $4 = (struct files_struct *) 0xffff0000c0011080
+
+or since the task_struct was set to $3:
+
+    (gdb) p $3->files
+    $7 = (struct files_struct *) 0xffff0000c0011080
+
+then 
+
+    (gdb) p *$7
+
+to display the contents or go for specific fields:
+
+    (gdb) p (*$7)->next_fd
+    $9 = 4
+
+--------------------------------------------------------------------------------
+
+To get to specific files, let's aim for fd=3 for the folling program:
+
+    int
+    main()
+    {	
+        int fd = open("lorem-ipsum", O_RDONLY);
+        pause();
+    }
+
+Let's get the inode number so we can check it when we get to the inode:
+
+    $ ls -li lorem-ipsum 
+    407688 -rw-r--r-- 1 spate spate 2972 Dec  4 15:43 lorem-ipsum
+
+and now in gdb:
+
+    (gdb) pipe lx-ps | grep spate
+    0xffff0000ed8ba180 1286  open-spate
+
+    (gdb) p ((struct task_struct *)0xffff0000ed8ba180)->files
+    $41 = (struct files_struct *) 0xffff0000c0a84580
+
+In ksys_read() we have "fd" and they do:
+
+    struct fd f = fdget_pos(fd);   <--- spaghetti!!!
+    if (f.file) {
+        loff_t pos, *ppos = file_ppos(f.file);
+        ...
+
+Difference between fdt and fdtab ? see https://www.kernel.org/doc/Documentation/filesystems/files.txt
+
+    (gdb) p $41->fdtab
+
+--------------------------------------------------------------------------------
+
+container_of()
+--------------
+
+    set $inode = *$container_of(0xffff000004418518, "struct inode", "i_sb_list")
+    set $de = *$container_of(0xffff888103132248, "struct dentry", "d_hash")
+
+--------------------------------------------------------------------------------
+
+Crash tutorial
+--------------
+
+    https://www.dedoimedo.com/computers/crash-analyze.html#mozTocId695289
+
+--------------------------------------------------------------------------------
+
+Where is this note?
+
+vi ~/books/linux-fs/notes/gdb
+

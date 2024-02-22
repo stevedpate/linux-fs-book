@@ -1,0 +1,302 @@
+\begin{lstlisting}
+(gdb) [*\bfseries *]
+(gdb) [*\bfseries *]
+\end{lstlisting}
+
+--------------------------------------------------------------------------------
+
+We know from the previous example that by the time we enter \cf{link_path_walk()}, the fields of the \cf{nameidata} structure have been initialized, in particular:
+
+\begin{itemize}
+    \item \cf{path.mnt} -- the \cf{vfsmount} for the starting filesystem
+    \item \cf{path.dentry} -- the starting directory dentry
+    \item \cf{path.inode} -- the inode for the starting directory 
+    \item \cf{path.name.name} -- the path to search for
+\end{itemize}
+
+\noindent
+We want to set a breakpoint in \cf{link\_path\_walk()} but only if we see a specific path in response to the following command being called since this is a function that is called all the time:
+
+\begin{lstlisting}
+$ [*\bfseries ls /home/spate/spfs/kern/spfs.ko
+$ [*\bfseries ls -ldi /
+2 drwxr-xr-x 19 root root 4096 Apr 10 23:48 /
+\end{lstlisting}
+
+\noindent
+The root directory inode number (2) is also displayed.
+
+Here is how we can set a breakpoint to hit only if "\cf{name}" points to a specif pathname as follows:
+
+\begin{lstlisting}
+(gdb) [*\bfseries br link_path_walk if $_streq(name, "/home/spate/spfs/kern/spfs.ko")*]
+Breakpoint 1 at 0xffffffff813fb9a0: link_path_walk. (4 locations)
+\end{lstlisting}
+
+\noindent
+At this point, let's look at the contents of \cf{nd}:
+
+\begin{lstlisting}
+(gdb) [*\bfseries p nd->path*]
+$47 = {
+  mnt = 0xffff8881001dd2e0,
+  dentry = 0xffff88812f8aa000
+}
+(gdb) [*\bfseries p nd->path->dentry->d_name.name*]
+$53 = (const unsigned char *) 0xffff88812f8aa038 "/"
+(gdb) [*\bfseries p nd->path->dentry->d_inode*]
+$52 = (struct inode *) 0xffff88812f8f13c8
+(gdb) [*\bfseries p nd->root*]
+$48 = {
+  mnt = 0xffff8881001dd2e0,
+  dentry = 0xffff88812f8aa000
+}
+(gdb) [*\bfseries p nd->inode*]
+$49 = (struct inode *) 0xffff88812f8f13c8
+(gdb) [*\bfseries p nd->inode->i_ino*]
+$51 = 2
+\end{lstlisting}
+
+\noindent
+Thus, everything displayed shows that this is the root directory from which the search will begin. The pathname that is being searched for is here:
+
+\begin{lstlisting}
+(gdb) [*\bfseries p nd->name.name*]
+$57 = 0xffff888100e6e020 "/home/spate/spfs/kern/spfs.ko"
+\end{lstlisting}
+
+\noindent
+Unlike the last example, the \cf{root} field has been set since we are looking up an absolute pathname (why it matters i don't know).
+
+Anyway, to the first breakpoint:
+
+\begin{lstlisting}
+(gdb) [*\bfseries bt*]
+#0  [*\bfseries link\_path\_walk*] (nd=0xffffc90000eebc70, 
+    name=0xffff888100e6e020 "/home/spate/spfs/kern/spfs.ko") at fs/namei.c:2488
+#1  [*\bfseries path\_lookupat*] (nd=nd@entry=0xffffc90000eebc70, flags=flags@entry=68, 
+    path=path@entry=0xffffc90000eebda8) at fs/namei.c:2494
+#2  [*\bfseries filename\_lookup*] (dfd=dfd@entry=-100, 
+    name=name@entry=0xffff888100e6e000, flags=flags@entry=4, 
+    path=path@entry=0xffffc90000eebda8, 
+    root=root@entry=0x0 <fixed_percpu_data>) at fs/namei.c:2524
+#3  [*\bfseries vfs\_statx*] (dfd=dfd@entry=-100, 
+    filename=filename@entry=0xffff888100e6e000, flags=flags@entry=256, 
+    stat=stat@entry=0xffffc90000eebdf8, request_mask=request_mask@entry=2)
+    at fs/stat.c:228
+#4  do_statx (dfd=dfd@entry=-100, 
+    filename=filename@entry=0xffff888100e6e000, flags=flags@entry=256, 
+    mask=mask@entry=2, buffer=buffer@entry=0x7ffc4924f4c0) at fs/stat.c:629
+\end{lstlisting}
+
+\noindent
+At this point nd->last is empty
+
+The first bit of code:
+
+\begin{lstlisting}
+    while (*name=='/')
+        name++;
+\end{lstlisting}
+
+\noindent
+strips of the first "/" so name becomes:
+
+\begin{lstlisting}
+(gdb) [*\bfseries p name*]
+$22 = 0xffff88812edbb021 "home/spate/spfs/kern/spfs.ko"
+\end{lstlisting}
+
+
+Hashing - each time through hash_len seems to be the correct number of characters of the component to search for. For example, first time through it's 4 (\cf{home}), then 5 (\cf{spate}) and so on.
+
+and then we'll step into \cf{walk_component(nd, WALK\_MORE)}
+
+We go through the following path:
+
+walk_component() -> lookup_fast() -> __d_lookup_rcu()
+
+on return (first time and looking for "home") a dentry is in the dcache and  returned. We can check its name:
+
+\begin{lstlisting}
+(gdb) [*\bfseries p dentry->d_name.name*]
+$86 = (const unsigned char *) 0xffff88811b5e7338 "home"
+\end{lstlisting}
+
+\noindent
+we've already plucked "home" out somewhere! Oh no, it's on a hash list
+and we just iterate around this list. If it's not on there, a lookup
+must be called at some point.
+
+NOTE - this is "home" so it will be in the dcache from simply me logging in to the system.
+
+--------------------------------------------------------------------------------
+
+Above example but tracking nd fields
+------------------------------------
+
+We're looking up /home/spate/spfs/kern/spfs.ko
+
+Before each call to walk_component()
+
+call nd->last.len nd->last.name                   name
+-----------------------------------------------------------------------------
+ 1        4       "home/spate/spfs/kern/spfs.ko"  "spate/spfs/kern/spfs.ko"
+ 2        5       "spate/spfs/kern/spfs.ko"       "spfs/kern/spfs.ko"
+ 3        4       "spfs/kern/spfs.ko"             "kern/spfs.ko"
+ 4        4       "kern/spfs.ko"                  "spfs.ko"
+
+When we come out of walk_component() for the 4th time, the "name" variable is "spfs.ko". This gets set in nd->last.name together with nd->last.hash_len = 7
+
+but as we return to the caller, we have nd->last.name = "spfs.ko"
+
+we are called from path_lookupat()
+
+--------------------------------------------------------------------------------
+
+Keep looping ...
+
+Pass 1
+
+We find "home" in the dcache
+
+Pass 2
+
+We find "spate" in the dcache
+
+Pass 3
+
+Same path ...
+
+walk_component() -> lookup_fast() -> __d_lookup_rcu()
+
+but this time on a call to lookup_fast(), we get NULL back telling us that "spfs" is not in the dcache. 
+
+\begin{lstlisting}
+2012		dentry = lookup_fast(nd, &inode, &seq);
+(gdb) [*\bfseries n*]
+36		return IS_ERR_VALUE((unsigned long)ptr);
+(gdb) [*\bfseries p dentry*]
+$4 = (struct dentry *) 0x0 <fixed_percpu_data>
+
+and we now enter lookup_slow() which locks the parent inode that we're searchign in then calls __lookup_slow():
+
+static struct dentry 
+*lookup_slow(const struct qstr *name,
+             struct dentry *dir,
+             unsigned int flags)
+{
+    struct inode *inode = dir->d_inode;
+    struct dentry *res;
+    inode_lock_shared(inode);
+    res = __lookup_slow(name, dir, flags);
+    inode_unlock_shared(inode);
+    return res;
+}
+
+static struct dentry *__lookup_slow(const struct qstr *name,
+                    struct dentry *dir,
+                    unsigned int flags)
+{
+    ...
+    if (unlikely(!d_in_lookup(dentry))) {
+        int error = d_revalidate(dentry, flags);
+        ...
+    } else {
+        old = inode->i_op->lookup(inode, dentry, flags);
+        d_lookup_done(dentry);
+        if (unlikely(old)) {
+            dput(dentry);
+            dentry = old;
+        }
+    }
+    return dentry;
+}
+\end{lstlisting}
+
+\noindent
+There is a last ditch attempt to see if the entry has been added to the dcache since we last checked and if not,there will be a call into the filesystem to read the inode.
+
+--------------------------------------------------------------------------------
+
+Crossing mountpoints
+
+This example shows what happens during pathname resolution when crossing a mount point. In the root filesystem we have the directory \cf{/mnt/mount_dir} on to which a filesystem is mounted as follows:
+
+\begin{lstlisting}
+$ sudo mount -t spfs /dev/loop0 /mnt/mount\_dir
+\end{lstlisting}
+
+\noindent
+We are going to search for a file as follows:
+
+\begin{lstlisting}
+$ ls /mnt/mount\_dir/lorem-ipsum
+\end{lstlisting}
+
+\noindent
+Once again, we'll be setting a breakpoint in link_path_walk() to check for a specific path and also in \cf{sp\_lookup()} to see when a call is made into the filesystem::
+
+\begin{lstlisting}
+(gdb) [*\bfseries br link\_path\_walk if $_streq(name, "/mnt/mount\_dir/lorem-ipsum")*]
+(gdb) [*\bfseries br sp\_lookup*]
+\end{lstlisting}
+
+\noindent
+As we resolve the pathname, We will see dentries for the following:
+
+\begin{itemize}
+    \item root directory - "/"
+    \item \cf{mount\_dir}
+    \item root directory for the SPFS filesystem
+    \item \cf{lorem-ipsum}
+\begin{itemize}
+
+\noindent
+As we hit the first breakpoint:
+
+\begin{lstlisting}
+(gdb) [*\bfseries bt 1*]
+#0  [*\bfseries link\_path\_walk*] (name=name@entry=0xffff888100929020 "/mnt/mount_dir/lorem-ipsum", nd=nd@entry=0xffffc900007cfc80) at fs/namei.c:2270
+\end{lstlisting} 
+
+\noindent
+Let's check the address \cf{nd}:
+
+\begin{lstlisting}
+(gdb) [*\bfseries p nd*]
+$18 = (struct nameidata *) 0xffffc900007cfc80
+\end{lstlisting} 
+
+\noindent
+We know that as we iterate through the pathname, we should see a call path as follows when handling mountpoints:
+
+\cf{link\_path\_walk()} $\leftarrow$  walk\_component()} $\leftarrow$ \cf{step\_into()} $\leftarrow$ \cf{handle\_mounts()}
+
+so using the address of \cf{nd}, we can set a breakpoint as follows:
+
+\begin{lstlisting}
+(gdb) [*\bfseries br handle_mounts if nd = 0xffffc900007cfc80*]
+\end{lstlisting}
+
+\noindent
+Then we can let the flow continue until the breakpoint is hit. We'll need to skip the first time it stops (to handle "/"). On the second occurence, we can confirm that we have the stack backtrace that we expect:
+
+\begin{lstlisting}
+(gdb) [*\bfseries bt 4*]
+#0  [*\bfseries handle\_mounts*] (seqp=<optimized out>, inode=<optimized out>, path=<optimized out>, dentry=<optimized out>, nd=<optimized out>) at fs/namei.c:1528
+#1  [*\bfseries step\_into*] (nd=nd@entry=0xffffc900007cfc80, flags=flags@entry=2, dentry=0xffff888100722d80, inode=0xffff8881306ba1c0, seq=2) at fs/namei.c:1846
+#2  [*\bfseries walk\_component*] (nd=nd@entry=0xffffc900007cfc80, flags=flags@entry=2) at fs/namei.c:2022
+#3  [*\bfseries link\_path\_walk*] (name=0xffff888100929025 "mount_dir/lorem-ipsum", name@entry=0xffff888100929020 "/mnt/mount_dir/lorem-ipsum", nd=nd@entry=0xffffc900007cfc80) at fs/namei.c:2343
+\end{lstlisting}
+
+\noindent
+None of the arguments look useful at this stage and the reason why is beyond my level of knowledge and likely this book. However, just single step and you'll get a better stack backtrace:
+
+\begin{lstlisting}
+(gdb) [*\bfseries s*]
+[*\bfseries handle\_mounts*] (seqp=<synthetic pointer>, inode=<synthetic pointer>, path=0xffffc900007cfb38, dentry=0xffff8881031e83c0, nd=0xffffc900007cfc80) at fs/namei.c:1523
+\end{lstlisting}
+
+\noindent
+Hmm! Stuck!

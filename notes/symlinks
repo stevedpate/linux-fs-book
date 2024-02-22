@@ -1,0 +1,69 @@
+We get here (*) but we don't get to vfs_readlink()
+
+- user_path_at_empty() returns 0
+- doesn't get to security_inode_readlink()
+
+    - must be failing on d_is_symlink() which does the following:
+
+        return __d_entry_type(dentry) == DCACHE_SYMLINK_TYPE;
+
+    - since we don't have i_op->readlink set (neither does ext4)
+
+    - d_flags_for_inode() sets the flag above
+
+
+security_inode_readlink retruns 0 for symlinks outside of SPFS but we
+don't get here for SPFS.
+
+Who calls d_flags_for_inode()?
+
+    - __d_instantiate()         <- called by d_instantiate()
+    - __d_instantiate_anon()
+    - __d_add()
+
+d_instantiate() doesn't do much other than call __d_instantiate().
+
+--------------------------------------------------------------------------------
+
+SYSCALL_DEFINE4(readlinkat, int, dfd, const char __user *, pathname,
+        char __user *, buf, int, bufsiz)
+{
+    return do_readlinkat(dfd, pathname, buf, bufsiz);
+}
+    
+*   static int do_readlinkat(int dfd, const char __user *pathname,
+                 char __user *buf, int bufsiz)
+    {
+        struct path path;
+        int error;
+        int empty = 0;
+        unsigned int lookup_flags = LOOKUP_EMPTY;
+
+        if (bufsiz <= 0)
+            return -EINVAL;
+
+    retry:
+*       error = user_path_at_empty(dfd, pathname, lookup_flags, &path, &empty);
+        if (!error) {
+            struct inode *inode = d_backing_inode(path.dentry);
+
+            error = empty ? -ENOENT : -EINVAL;
+            /*
+             * AFS mountpoints allow readlink(2) but are not symlinks
+             */
+            if (d_is_symlink(path.dentry) || inode->i_op->readlink) {
+                error = security_inode_readlink(path.dentry);
+                if (!error) {
+                    touch_atime(&path);
+                    error = vfs_readlink(path.dentry, buf, bufsiz);
+                }
+            }
+            path_put(&path);
+            if (retry_estale(error, lookup_flags)) {
+                lookup_flags |= LOOKUP_REVAL;
+                goto retry;
+            }
+        }
+        return error;
+    }
+

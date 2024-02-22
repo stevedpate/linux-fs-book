@@ -1,0 +1,90 @@
+
+BFS inodes
+----------
+
+bfs_fill_super() reads in the on-disk superblock but doesn't seem to 
+keep it in-core!
+
+One good reason not to use the on-disk structures directly is that the
+type sizes don't match so we'd have to keep casting etc. But how do we
+keep the on-disk SB up to date?
+
+We can replicate the strucutre (as needed) so:
+
+	spfs_sb_info		- superblock
+	sp_inode_info		- inode
+
+--------------------------------------------------------------------------------
+
+linux-5.19.8/include/uapi/linux/bfs_fs.h
+
+	BFS superblock layout on disk 
+
+	struct bfs_super_block {
+		__le32 s_magic;
+		__le32 s_start;
+		__le32 s_end;
+		__le32 s_from;
+		__le32 s_to;
+		__s32 s_bfrom;
+		__s32 s_bto;
+		char  s_fsname[6];
+		char  s_volume[6];
+		__u32 s_padding[118];
+	};
+
+linux-5.19.8/fs/bfs/bfs.h
+
+
+	BFS file system in-core superblock info
+
+	struct bfs_sb_info {
+		unsigned long si_blocks;
+		unsigned long si_freeb;
+		unsigned long si_freei;
+		unsigned long si_lf_eblk;
+		unsigned long si_lasti;
+		DECLARE_BITMAP(si_imap, BFS_MAX_LASTI+1);
+		struct mutex bfs_lock;
+	};
+
+--------------------------------------------------------------------------------
+
+linux-5.19.8/include/uapi/linux/bfs_fs.h
+
+	BFS inode layout on disk
+
+	struct bfs_inode {
+		__le16 i_ino;
+		__u16 i_unused;
+		__le32 i_sblock;
+		__le32 i_eblock;
+		__le32 i_eoffset;
+		__le32 i_vtype;
+		__le32 i_mode;
+		__le32 i_uid;
+		__le32 i_gid;
+		__le32 i_nlink;
+		__le32 i_atime;
+		__le32 i_mtime;
+		__le32 i_ctime;
+		__u32 i_padding[4];
+	};
+
+linux-5.19.8/fs/bfs/bfs.h
+
+	BFS file system in-core inode info
+	 
+	struct bfs_inode_info {
+		unsigned long i_dsk_ino; /* inode number from the disk, can be 0 */
+		unsigned long i_sblock;
+		unsigned long i_eblock;
+		struct inode vfs_inode;
+	};
+
+	struct bfs_dirent {
+		__le16 ino;
+		char name[BFS_NAMELEN];
+	};
+
+

@@ -1,0 +1,22 @@
+ksys_read(unsigned int fd, char __user *buf, size_t count)
+
+    struct fd f = fdget_pos(fd);
+
+    if (f.file) {
+        loff_t pos, *ppos = file_ppos(f.file);
+        if (ppos) {
+            pos = *ppos;
+            ppos = &pos;
+        }
+        ret = vfs_read(f.file, buf, count, ppos);
+
+--------------------------------------------------------------------------------
+
+static inline struct fd fdget_pos(int fd)
+{
+    return __to_fd(__fdget_pos(fd));
+} 
+
+--------------------------------------------------------------------------------
+
+

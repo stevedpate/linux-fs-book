@@ -1,0 +1,122 @@
+\documentclass{book}
+\usepackage{graphicx}
+\usepackage[T1]{fontenc}
+\usepackage{times}
+\usepackage{fancyvrb}
+\usepackage{fancyhdr}
+\usepackage{ifthen}
+\usepackage{calc}
+\usepackage{wrapfig}
+\usepackage{algpseudocode}
+\usepackage{colortbl,booktabs}
+\usepackage{tabularx}
+\usepackage[table]{xcolor}
+\usepackage{listings}
+\usepackage{tocloft}
+
+%
+% Headers / footers
+% \rightmark - section #
+% \leftmark - chapter #
+%
+
+\fancyhead{}\fancyfoot{}
+\fancyhead[LE]{\small\nouppercase\thepage\ \ \ \ \nouppercase\leftmark}		% page / chapter - even pages
+\fancyhead[RO]{\small\nouppercase\rightmark\ \ \ \ \thepage}				% section / page - odd pages
+
+\renewcommand{\chaptermark}[1]{%
+  \markboth{Chapter\thepart\ \thechapter:\ \ #1}{}}
+
+\renewcommand{\sectionmark}[1]{%
+  \markright{Section\ \thesection\ \ \ #1}}
+
+%
+% Page layout
+%
+
+\setlength{\textwidth}{5in}					% width
+\setlength{\textheight}{7.5in}				% height
+\setlength{\oddsidemargin}{.5\oddsidemargin}
+\pagestyle{fancy}
+
+\let\tmp\oddsidemargin
+\let\oddsidemargin\evensidemargin
+\let\evensidemargin\tmp
+\reversemarginpar
+
+% Changing spacing for Contents
+% 
+% https://tex.stackexchange.com/questions/13690/extra-space-for-numbered-titles-in-table-of-contents
+
+\cftsetindents{section}{0em}{2.5em}     % increase spacing in contents
+
+%
+% Miscelaneous
+%
+
+\newcommand{\cf}[1]{\texttt{#1}}	% \cf - courier font for inline text
+
+%
+% Source code / output with optional bold commands
+%
+
+\lstset{basicstyle=\fontfamily{pcr}\small,xleftmargin=15pt}  % XXX 15pt seems correct but fine the right indent
+\lstset{
+    escapeinside={[*}{*]}
+}
+
+%
+% Miscellaneous stuff
+%
+
+\newenvironment{dedication}
+  {%\clearpage           % we want a new page          %% I commented this
+   \thispagestyle{empty}% no header and \footnote{•}oter
+   \Large\textbf{{To}}
+   \vspace*{\stretch{1}}% some space at the top
+   \itshape             % the text is in italics
+   \centering          % flush to the right margin
+  }
+  {\par % end the paragraph
+   \vspace{\stretch{3}} % space at bottom is three times that at the top
+   \clearpage           % finish off the page
+  }
+
+%
+% Body of document starts here
+%
+
+\begin{document}
+
+\newcounter{urls}
+\setcounter{urls}{1}
+
+\begin{dedication}
+
+\textbf{Bill Hackenberger}
+
+\vspace{1cm}
+My fellow business partner at HighCloud Security where we certainly lived through the Silicon Valley experience of starting a company, going up and down Sand Hill Road raising money, building a team, products, getting customers, running low on money more times that we'd care to remember but ultimately leading to an exit. Not the big one we hoped for but it was a journey to remember for sure.
+\end{dedication}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\tableofcontents
+
+\include{intro-fs.tex}
+\include{programming-fs.tex}
+\include{filesystems.tex}
+\include{kernel-structures.tex}
+\include{types.tex}
+\include{vfs-interface.tex}
+\include{disk-fs.tex}
+\include{fuse-fs.tex}
+\include{debugging.tex}
+\include{security.tex}
+\include{performance.tex}
+\include{case-studies.tex}
+\include{forensics.tex}
+\include{bibliography.tex}
+\include{index.tex}
+
+\end{document}

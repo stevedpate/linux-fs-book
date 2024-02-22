@@ -1,0 +1,48 @@
+Assuming open-spate.c contains:
+
+    #include <stdio.h>
+    #include <fcntl.h>
+    #include <unistd.h>
+
+    int
+    main()
+    {	
+        int fd = open("lorem-ipsum", O_RDONLY);
+        pause();
+    }
+
+Run it and enter crash from another window:
+
+crash> ps | grep spate
+   7703   5214   3  ffff5a09d824af40  IN   0.0    2056    968  open-spate
+
+crash> task ffff5a09d824af40 | grep files
+  files = 0xffff5a09c08f7c80,
+
+crash> files_struct 0xffff5a09c08f7c80  # no need to add "struct" first
+
+crash> files_struct 0xffff5a09c08f7c80 | grep fdt
+  fdt = 0xffff5a09d8814800,
+  fdtab = {
+
+crash> fdtable 0xffff5a09d8814800 | grep "fd ="
+  fd = 0xffff5a09d4292800,
+
+crash> rd 0xffff5a09d4292800 4
+ffff5a09d4292800:  ffff5a09d97a1200 ffff5a09d97a1200   ..z..Z....z..Z..
+ffff5a09d4292810:  ffff5a09d97a1200 ffff5a09b2bf7200   ..z..Z...r...Z..
+
+crash> file ffff5a09b2bf7200 | grep dentry
+    dentry = 0xffff5a09b6de2f00
+
+crash> dentry 0xffff5a09b6de2f00 | grep name
+  d_name = {
+    name = 0xffff5a09b6de2f38 "lorem-ipsum"
+  d_iname = "lorem-ipsum\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000",
+
+crash> file ffff5a09b2bf7200 | grep inode
+  f_inode = 0xffff5a095f42a140,
+
+crash> inode 0xffff5a095f42a140 | grep i_ino
+  i_ino = 407688,
+

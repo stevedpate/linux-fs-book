@@ -1,0 +1,90 @@
+There are two structures related to mounts:
+
+    super_block
+    vfsmount
+
+Why two? Linux allows the same filesystem to be mounted twice in different
+places. 
+
+The s_mounts field points to a list of all mount structures (offset by 0x78), 
+one for each mounted instance of this superblock.
+
+The crash command dumps "mount" and "super_block" structures for which
+there seems to be a 1:1 correspondence (see above though). And inside
+the super_block structure we have:
+
+    struct list_head    s_mounts;   /* list of mounts; _not_ for fs use */
+
+It is a list of mount structures.
+
+--------------------------------------------------------------------------------
+
+just did mount -t spfs /dev/loop8 /mnt then ...
+
+for reference:
+
+(gdb) pipe lx-mounts | grep spfs
+0xffff88812f3ea500 0xffff888127b7c800 /dev/loop8 /mnt spfs rw,relatime 0 0
+
+while in gdb:
+
+(gdb) p super_blocks
+$4 = {
+  next = 0xffff88810005a800,
+  prev = 0xffff888127b7c800      <----- this is the last one mounted (SPFS)
+}
+
+(gdb) set $sb = (struct super_block *)0xffff888127b7c800
+
+(gdb) p $sb->s_mounts
+$3 = {
+  next = 0xffff88812f3ea578,
+  prev = 0xffff888101952cf8
+}
+
+Why are there two? Each of these addresses is 0x78 bytes into the 'mount'
+structure. If you go back and print out each one, both display "mnt" and
+"/dev/loop8":
+
+------NOTE ------
+
+(gdb) p &$mount->mnt_instance
+$39 = (struct list_head *) 0xffff88812f3ea578
+
+Let's look at actual 'mount' structs:
+
+(gdb) set $m1 = (struct mount *)0xffff88812f3ea500    # - 0x78
+(gdb) set $m2 = (struct mount *)0xffff888101952c80    # - 0x78
+
+(gdb) p $m1->mnt_mountpoint->d_name.name
+$49 = (const unsigned char *) 0xffff88812f8324b8 "mnt"
+(gdb) p $m1->mnt_devname
+$46 = 0xffff8881008d4b10 "/dev/loop8"
+
+(gdb) p $m2->mnt_mountpoint->d_name.name
+$47 = (const unsigned char *) 0xffff88812f8324b8 "mnt"
+(gdb) p $m2->mnt_devname
+$48 = 0xffff8881008d4230 "/dev/loop8"
+
+-----------
+
+If I look at another filesystem it's the same:
+
+(gdb) pipe lx-mounts | grep sda2
+0xffff888101970640 0xffff88811fba6000 /dev/sda2 /boot ext4 rw,relatime 0 0
+
+(gdb) set $sbr = (struct super_block *)0xffff88811fba6000
+(gdb) p $sbr->s_mounts
+$62 = {
+  next = 0xffff8881019706b8,
+  prev = 0xffff888130170f78
+}
+
+(gdb) set $mr1 = (struct mount *)0xffff888101970640   # - 0x78
+(gdb) set $mr2 = (struct mount *)0xffff888130170f00   # - 0x78
+
+etc - printing them both out gets "/dev/sda2" and "/boot"
+
+--------------------------------------------------------------------------------
+
+so why does lx-mounts only display one copy?

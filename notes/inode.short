@@ -1,0 +1,20 @@
+struct inode {
+    umode_t                        i_mode;
+    kuid_t                         i_uid;
+    kgid_t                         i_gid;
+    unsigned int                   i_flags;
+    const struct inode_operations *i_op;
+    struct super_block            *i_sb;
+    struct address_space          *i_mapping;
+    unsigned long                  i_ino;
+    const unsigned int             i_nlink;
+    dev_t                          i_rdev;
+    loff_t                         i_size;
+    struct timespec64              i_atime;
+    struct timespec64              i_mtime;
+    struct timespec64              i_ctime;
+    unsigned short                 i_bytes;
+    blkcnt_t                       i_blocks;
+    struct address_space           i_data;
+    void                          *i_private;
+}

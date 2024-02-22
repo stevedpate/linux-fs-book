@@ -1,0 +1,15 @@
+Looking at btrfs in linux-6.3.3:
+
+static struct file_system_type btrfs_fs_type = {
+    .owner      = THIS_MODULE,
+    .name       = "btrfs",
+    .mount      = btrfs_mount,
+    .kill_sb    = btrfs_kill_super,
+    .fs_flags   = FS_REQUIRES_DEV | FS_BINARY_MOUNTDATA,
+};
+
+and then again in June 2023:
+
+    https://lwn.net/Articles/936388/
+
+the code hoever, is NOT in 6.5.2 

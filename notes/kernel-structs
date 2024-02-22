@@ -1,0 +1,280 @@
+struct task_struct {
+    /* Filesystem information: */
+    struct fs_struct        *fs;
+
+    /* Open file information: */
+    struct files_struct     *files;
+
+    /* Namespaces: */
+    struct nsproxy          *nsproxy;
+}
+
+--------------------------------------------------------------------------------
+
+struct fs_struct {
+    int users;
+    spinlock_t lock;
+    seqcount_spinlock_t seq;
+    int umask;
+    int in_exec;
+    struct path root, pwd;
+}
+
+--------------------------------------------------------------------------------
+
+struct files_struct {
+  /*
+   * read mostly part
+   */
+    atomic_t count;
+    bool resize_in_progress;
+    wait_queue_head_t resize_wait;
+
+    struct fdtable __rcu *fdt;
+    struct fdtable fdtab;
+  /*
+   * written part on a separate cache line in SMP
+   */
+    spinlock_t file_lock ____cacheline_aligned_in_smp;
+    unsigned int next_fd;
+    unsigned long close_on_exec_init[1];
+    unsigned long open_fds_init[1];
+    unsigned long full_fds_bits_init[1];
+    struct file __rcu * fd_array[NR_OPEN_DEFAULT];
+};
+
+--------------------------------------------------------------------------------
+
+struct fdtable {
+	unsigned int max_fds;
+	struct file __rcu **fd;      /* current fd array */
+	unsigned long *close_on_exec;
+	unsigned long *open_fds;
+	unsigned long *full_fds_bits;
+	struct rcu_head rcu;
+};
+
+--------------------------------------------------------------------------------
+
+struct file {
+    union {
+        struct llist_node   fu_llist;
+        struct rcu_head     fu_rcuhead;
+    } f_u;
+    struct path     f_path;
+    struct inode        *f_inode;   /* cached value */
+    const struct file_operations    *f_op;
+    
+    /*
+     * Protects f_ep, f_flags.
+     * Must not be taken from IRQ context.
+     */
+    spinlock_t      f_lock;
+    atomic_long_t       f_count; 
+    unsigned int        f_flags;
+    fmode_t         f_mode;
+    struct mutex        f_pos_lock;
+    loff_t          f_pos;
+    struct fown_struct  f_owner;
+    const struct cred   *f_cred;
+    struct file_ra_state    f_ra;
+
+    u64         f_version;
+#ifdef CONFIG_SECURITY
+    void            *f_security;
+#endif
+    /* needed for tty driver, and maybe others */
+    void            *private_data;
+
+#ifdef CONFIG_EPOLL
+    /* Used by fs/eventpoll.c to link all the hooks to this file */
+    struct hlist_head   *f_ep;
+#endif /* #ifdef CONFIG_EPOLL */
+    struct address_space    *f_mapping;
+    errseq_t        f_wb_err;
+    errseq_t        f_sb_err; /* for syncfs */
+}
+
+--------------------------------------------------------------------------------
+
+There can be multiple names (i_nlink > 1) to a file so there is a list
+of dentries from the inode.
+
+struct inode {
+	    union {
+        struct hlist_head   i_dentry;
+        struct rcu_head     i_rcu;
+    };
+}
+
+--------------------------------------------------------------------------------
+
+Opening a file
+--------------
+
+First part is getting a file descriptor and then making a call to
+do_filp_open() to actually open the file.
+
+PART 1
+------
+
+fs/open.c
+
+long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
+
+    - struct open_how how = build_open_how(flags, mode);
+    - return do_sys_openat2(dfd, filename, &how);
+
+static long do_sys_openat2(int dfd, const char __user *filename,
+               struct open_how *how)
+
+    - int fd = build_open_flags(how, &op);
+    - fd = get_unused_fd_flags(how->flags);
+    - struct file *f = do_filp_open(dfd, tmp, &op);
+
+fs/file.c
+
+int __get_unused_fd_flags(unsigned flags, unsigned long nofile)
+
+    - return alloc_fd(0, nofile, flags);  /* start at fd 0 */
+
+
+static int alloc_fd(unsigned start, unsigned end, unsigned flags)
+
+  If fds are avalable:
+
+    - struct files_struct *files = current->files;
+	- fdt = files_fdtable(files);
+	- if (fd < files->next_fd)
+        fd = files->next_fd;
+
+  else:
+
+    - error = expand_files(files, fd);
+    - XXX - look more at this
+
+PART 2
+------
+
+fs/namei.c
+
+struct file *do_filp_open(int dfd, struct filename *pathname,
+                          const struct open_flags *op)
+
+    - set_nameidata(&nd, dfd, pathname, NULL);
+
+    - filp = path_openat(&nd, op, flags | LOOKUP_RCU);
+
+    - if (unlikely(filp == ERR_PTR(-ECHILD)))
+        filp = path_openat(&nd, op, flags);
+
+    - if (unlikely(filp == ERR_PTR(-ESTALE)))
+        filp = path_openat(&nd, op, flags | LOOKUP_REVAL);
+
+    - restore_nameidata();
+
+static struct file *path_openat(struct nameidata *nd,
+            const struct open_flags *op, unsigned flags)
+
+	- file = alloc_empty_file(op->open_flag, current_cred());
+
+    - const char *s = path_init(nd, flags);
+
+	- link_path_walk(s, nd))
+
+	- do_open(nd, file, op);
+
+	- return file;				/* if (likely(!error)) */
+
+
+static int 
+link_path_walk(const char *name, struct nameidata *nd)
+
+	- Skip over multiple "/"s
+	- XXX - namespaces something
+    - for(;;)
+        - Handle "." and ".."
+	    - Check XXX - if (unlikely(!*name)) {
+	    - Call walk_component() passing flag of 0
+        - else call walk_component() passing flag of WALK_MORE
+
+static const char *
+walk_component(struct nameidata *nd, int flags)
+
+	- dentry = lookup_fast(nd, &inode, &seq);
+	- if (unlikely(!dentry)) {
+		dentry = lookup_slow(&nd->last, nd->path.dentry, nd->flags);
+	- return step_into(nd, flags, dentry, inode, seq);
+
+static const char *
+step_into(struct nameidata *nd, int flags,
+             struct dentry *dentry, struct inode *inode, unsigned seq)
+
+	- handle_mounts(nd, dentry, &path, &inode, &seq)
+
+add more to book - these must be next things to look at? inode is next dir?
+
+        - nd->path = path;
+        - nd->inode = inode;
+        - nd->seq = seq;
+
+dir->i_op->lookup() called in fs/namei.c from:
+
+	__lookup_slow()
+	lookup_open()
+	__lookup_hash()
+
+Getting the root inode for pathname resolution
+----------------------------------------------
+
+path_init() ->nd_jump_root() -> set_root()
+
+set_root()
+
+    - struct fs_struct *fs = current->fs;
+    - nd->root = fs->root;  /* this is struct path */
+
+path_init(struct nameidata *nd, unsigned flags)
+
+    - if absolute pathame ("/...")
+        - nd->path = nd->root;
+        - path_get(&nd->path);
+        - nd->inode = nd->path.dentry->d_inode;
+    - else
+        - get_fs_pwd(current->fs, &nd->path);
+        - nd->inode = nd->path.dentry->d_inode;
+
+    - current->fs points to an "fs_struct" structure
+
+        struct fs_struct {
+            struct path root, pwd;
+        }
+
+    - in the task_struct:
+
+      root = {
+        mnt = 0xffff7d2c834c9a60,
+        dentry = 0xffff7d2c931b8480
+      },
+      pwd = {
+        mnt = 0xffff7d2c834c9a60,       - "/"
+        dentry = 0xffff7d2c93c0f780     - defn CWD - "test" for 2pages
+
+--------------------------------------------------------------------------------
+
+Directory Cache
+---------------
+
+    struct dentry {
+        unsigned int d_flags;       /* protected by d_lock */
+        struct dentry *d_parent;    /* parent directory */
+        struct qstr d_name;
+        struct inode *d_inode;      /* Where the name belongs to - NULL is negative */
+        unsigned char d_iname[DNAME_INLINE_LEN];    /* small names */
+    
+        const struct dentry_operations *d_op;
+        struct super_block *d_sb;   /* The root of the dentry tree */
+        void *d_fsdata;         /* fs-specific data */
+        struct list_head d_child;   /* child of parent list */
+        struct list_head d_subdirs; /* our children */
+    }

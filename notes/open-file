@@ -1,0 +1,121 @@
+System Calls
+------------
+
+There are three different system calls for opening a file namely open(2), openat() and openat(2). Here are their definitions:
+
+int open(const char *pathname, int flags);
+int open(const char *pathname, int flags, mode_t mode);
+
+int openat(int dirfd, const char *pathname, int flags);
+int openat(int dirfd, const char *pathname, int flags, mode_t mode);
+
+int openat2(int dirfd, const char *pathname,
+            const struct open_how *how, size_t size);
+
+--------------------------------------------------------------------------------
+
+In the kernel
+-------------
+
+There is a little more complexity here so search for compat functions
+and see what they do. For now:
+
+open:
+
+    SYSCALL_DEFINE3(open, const char __user *, filename, int, flags, ...)
+    {
+        if (force_o_largefile())
+            flags |= O_LARGEFILE;
+        return do_sys_open(AT_FDCWD, filename, flags, mode);
+    }
+
+openat:
+
+    SYSCALL_DEFINE4(openat, int, dfd, const char __user *, filename, int, flags,
+            umode_t, mode)
+    {
+        if (force_o_largefile())
+            flags |= O_LARGEFILE;
+        return do_sys_open(dfd, filename, flags, mode);
+    }
+
+openat2:
+
+    SYSCALL_DEFINE4(openat2, int, dfd, const char __user *, filename,
+            struct open_how __user *, how, size_t, usize)
+    {
+        ...
+        return do_sys_openat2(dfd, filename, &tmp);
+    }
+
+--------------------------------------------------------------------------------
+
+do_sys_open():
+
+    long do_sys_open(int dfd, const char __user *filename, 
+                     int flags, umode_t mode)
+    {   
+        struct open_how how = build_open_how(flags, mode);
+        return do_sys_openat2(dfd, filename, &how);
+    }   
+
+build_open_how():
+
+  - doesn't do much other than basic checking - XXX
+
+--------------------------------------------------------------------------------
+
+do_sys_openat2():
+
+    static long do_sys_openat2(int dfd, const char __user *filename,
+                   struct open_how *how)
+    {
+
+        int fd = build_open_flags(how, &op);
+        tmp = getname(filename);
+
+        fd = get_unused_fd_flags(how->flags);
+        if (fd >= 0) {
+            struct file *f = do_filp_open(dfd, tmp, &op);
+            if (IS_ERR(f)) {
+                put_unused_fd(fd);
+                fd = PTR_ERR(f);
+            } else {
+                fsnotify_open(f);
+                fd_install(fd, f);
+            }
+        }
+        putname(tmp);
+        return fd;
+    }
+
+--------------------------------------------------------------------------------
+
+mkdir() contrast
+----------------
+
+    SYSCALL_DEFINE3(mkdirat, int, dfd, const char __user *, pathname, 
+                    umode_t, mode)
+    {
+        return do_mkdirat(dfd, getname(pathname), mode);
+    }
+
+    SYSCALL_DEFINE2(mkdir, const char __user *, pathname, umode_t, mode)
+    {
+        return do_mkdirat(AT_FDCWD, getname(pathname), mode);
+    }
+
+int do_mkdirat(int dfd, struct filename *name, umode_t mode)
+{
+    dentry = filename_create(dfd, name, &path, lookup_flags);
+    error = security_path_mkdir(&path, dentry, mode);
+    if (!error) {
+        struct user_namespace *mnt_userns;
+        mnt_userns = mnt_user_ns(path.mnt);
+        error = vfs_mkdir(mnt_userns, path.dentry->d_inode, dentry,
+                  mode);
+    }
+    done_path_create(&path, dentry);
+}
+
+

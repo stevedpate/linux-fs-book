@@ -1,0 +1,106 @@
+% Verbatim stuff
+
+\begin{lstlisting}
+    first line
+    [*\bfseries XXX*]
+    next line
+\end{lstlisting}
+
+\begin{lstlisting}[xleftmargin=14pt] % gets aligned with indented paragraph text
+$ [*\bfseries setfattr -n user.comment -v "This file contains Latin" \textbackslash *] % to add backslash on end of line
+
+% Figures
+
+\begin{figure}[h]
+	\includegraphics[scale=0.6]{figures/inode.pdf}
+	\centering
+	\caption{The root directory with 96 entries}
+	\label{fig:inode}
+\end{figure}
+
+The \ref{fig:inode} is the structure ...
+
+% Source code reference
+
+\begin{table}[h]
+\begin{tabular}{ll}
+\parbox[l]{0.6in}{\includegraphics[scale=0.8]{figures/src-xref.pdf}} & \parbox[l]{4in}{\small{text goes here}}
+\end{tabular}
+\end{table}
+
+% References (URLs)
+
+\begin{table}[h]
+\begin{tabular}{lcl}
+\parbox[r]{0.5in}{\includegraphics[scale=0.15]{figures/url.png}} & \parbox[l]{0.55in}{URL \arabic{urls}} & \parbox[l]{3in}{\cf{www.url.com}}
+\end{tabular}
+\end{table}
+\stepcounter{urls}
+% real URL
+
+% Videos
+
+\begin{table}[h]
+\begin{tabular}{ll}
+\parbox[l]{0.6in}{\includegraphics[scale=0.3]{figures/video-camera.pdf}} & \parbox[l]{4in}{\small{\textbf{VIDEO 2} -- text description goes here}}
+\end{tabular}
+\end{table}
+
+% Change indentation for itemized lists
+
+\begin{itemize}
+	\setlength{\itemindent}{.6in}
+	\item[foobar] description
+	
+% Vertical space
+
+\vspace{10px}
+    \cf{glibc/libio/bits/types/struct\_FILE.h} --- in the glibc source code 
+    
+\vspace{5px}
+    \cf{/usr/include/aarch64-linux-gnu/bits/types/struct\_FILE.h} --- on my Ubuntu VM  
+\vspace{2px}
+	
+% References to other sections etc
+
+\subsection{KGDB --- Analyzing Per-file Kernel Structures}
+
+% Backslash in {lstlisting}
+
+Put in [* *]
+
+	echo "add-symbol-file /home/spate/spfs/kern/spfs.ko $text [*\textbackslash*]
+	
+% Arrows to show code paths
+
+\small
+\bigskip 
+\cf{spfs\_mount()} $\rightarrow$ \cf{spfs\_fill\_super()}  $\rightarrow$ \cf{sp\_read\_inode()}
+%\\~\\
+    
+\bigskip
+\normalsize
+\noindent
+
+% the following spans multiple lines so separated by \vspace and with indentation to take line 2 to
+% the first arrow on line 1. This will need to change every time due to the size of the 1st function.
+
+\small
+\bigskip 
+\cf{link\_path\_walk()} $\rightarrow$ \cf{walk\_component()}  $\rightarrow$ \cf{lookup\_fast()} 
+
+\vspace{1pt}
+\hspace{1.37in}$\rightarrow$ \cf{\_\_d\_lookup\_rcu()} 
+%\\~\\
+    
+\bigskip
+\normalsize
+\noindent
+xxx
+
+
+
+
+
+
+

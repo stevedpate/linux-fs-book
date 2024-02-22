@@ -1,0 +1,114 @@
+open.c:SYSCALL_DEFINE2(creat, const char __user *, 
+fhandle.c:SYSCALL_DEFINE3(open_by_handle_at, int, 
+fhandle.c:COMPAT_SYSCALL_DEFINE3(open_by_handle_at, 
+open.c:SYSCALL_DEFINE3(open, const char __user *, 
+open.c:SYSCALL_DEFINE4(openat, int, dfd, const char __user *, 
+open.c:SYSCALL_DEFINE4(openat2, int, dfd, 
+open.c:COMPAT_SYSCALL_DEFINE3(open, const char __user *, 
+open.c:COMPAT_SYSCALL_DEFINE4(openat, int, dfd, 
+
+--------------------------------------------------------------------------------
+
+SYSCALL_DEFINE3(open, const char __user *, filename, int, flags, umode_t, mode)
+{       
+    return do_sys_open(AT_FDCWD, filename, flags, mode);
+}
+
+#define AT_FDCWD        -100    /* Special value used to indicate openat should 
+                                   use the current working directory. */
+
+NOTE - it's negative since FDs > 0 are valid and you can't easily test for 0!
+
+SYSCALL_DEFINE4(openat, int, dfd, const char __user *, filename, int, flags,
+        umode_t, mode) 
+{       
+    return do_sys_open(dfd, filename, flags, mode);
+}   
+
+SYSCALL_DEFINE4(openat2, int, dfd, const char __user *, filename,
+        struct open_how __user *, how, size_t, usize)
+{       
+    struct open_how tmp;
+
+    copy_struct_from_user(&tmp, sizeof(tmp), how, usize);
+
+    return do_sys_openat2(dfd, filename, &tmp);
+}
+
+SYSCALL_DEFINE2(creat, const char __user *, pathname, umode_t, mode)
+{
+    int flags = O_CREAT | O_WRONLY | O_TRUNC;
+
+    return do_sys_open(AT_FDCWD, pathname, flags, mode);
+}
+
+--------------------------------------------------------------------------------
+
+long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
+{
+    struct open_how how = build_open_how(flags, mode);
+    return do_sys_openat2(dfd, filename, &how);
+}
+
+static long do_sys_openat2(int dfd, const char __user *filename,
+               struct open_how *how)
+{
+    tmp = getname(filename); 
+    fd = get_unused_fd_flags(how->flags);
+    if (fd >= 0) {
+        struct file *f = do_filp_open(dfd, tmp, &op);
+    }
+}
+
+NOTE - I have a code diagram that includes much of this including do_filp_open()
+
+do_filp_open() -> path_openat() -> link_path_walk() and around this call:
+
+        const char *s = path_init(nd, flags);
+        while (!(error = link_path_walk(s, nd)) &&
+               (s = open_last_lookups(nd, file, op)) != NULL)
+            ; 
+        if (!error)
+            error = do_open(nd, file, op);
+
+Inside open_last_lookups() is where it gets interesting:
+
+    if (!(open_flag & O_CREAT)) {
+        dentry = lookup_fast(nd);
+    } else {
+        /* create side of things */
+        if (nd->flags & LOOKUP_RCU) {
+            if (!try_to_unlazy(nd))
+                return ERR_PTR(-ECHILD);
+        }
+        audit_inode(nd->name, dir, AUDIT_INODE_PARENT);
+        /* trailing slashes? */
+        if (unlikely(nd->last.name[nd->last.len]))
+            return ERR_PTR(-EISDIR);
+    }
+
+    ...
+
+    dentry = lookup_open(nd, file, op, got_write);
+
+    ...
+}
+
+static struct dentry *
+lookup_open(struct nameidata *nd, struct file *file,
+                  const struct open_flags *op,
+                  bool got_write)
+{
+        error = dir_inode->i_op->create(idmap, dir_inode, dentry,
+                        mode, open_flag & O_EXCL);
+}
+
+The filesystem will create an inode on disk (local filesstem) and make
+a call to instantiate the dentry as follows:
+
+\begin{lstlisting}
+d_instantiate(dentry, inode);
+\end{lstlisting}
+
+\noindent
+xxx

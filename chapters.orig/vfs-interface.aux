@@ -1,0 +1,193 @@
+\relax 
+\@writefile{toc}{\contentsline {chapter}{\numberline {6}The VFS Layer}{199}{}\protected@file@percent }
+\@writefile{lof}{\addvspace {10\p@ }}
+\@writefile{lot}{\addvspace {10\p@ }}
+\newlabel{vfs}{{6}{199}}
+\@writefile{toc}{\contentsline {section}{\numberline {6.1}The VFS Entry Point}{199}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {6.1}{\ignorespaces The Linux VFS Interface}}{200}{}\protected@file@percent }
+\newlabel{fig:vfs-functions}{{6.1}{200}}
+\@writefile{toc}{\contentsline {section}{\numberline {6.2}VFS to Filesystem Interfaces}{200}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6.3}Registering Filesystems}{202}{}\protected@file@percent }
+\newlabel{register-fs}{{6.3}{202}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.3.1}Unregistering Filesystems}{203}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.3.2}KGDB --- Analyzing the List of Registered Filesystems}{204}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6.4}Mounting and Unmounting Filesystems}{205}{}\protected@file@percent }
+\citation{pate-filesystems}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.4.1}Legacy Mounts}{206}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {6.2}{\ignorespaces Mounting a Filesystem Using Legacy Mount Mode}}{207}{}\protected@file@percent }
+\newlabel{fig:super-operations}{{6.2}{207}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.4.2}Mounting Using Filesystem Context}{208}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.4.3}Mounting Filesystems at the VFS Layer}{210}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {6.3}{\ignorespaces Structures for the last mounted filesystem}}{212}{}\protected@file@percent }
+\newlabel{fig:mount-vfsmount}{{6.3}{212}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.4.4}KGDB -- A Look at Structures Following Mount}{213}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.4.5}Unmounting Filesystems}{214}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6.5}Namespace Creation and Handling}{215}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.5.1}Handling \texttt  {chroot(2)}}{215}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {6.4}{\ignorespaces Switching a process's root directory with \texttt  {chroot(2)}}}{216}{}\protected@file@percent }
+\newlabel{fig:chroot-fields}{{6.4}{216}}
+\@writefile{toc}{\contentsline {section}{\numberline {6.6}KGDB -- Analyzing Mount Namespace Creation}{216}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6.7}Opening a File / Pathname Resolution}{217}{}\protected@file@percent }
+\newlabel{openfile}{{6.7}{217}}
+\@writefile{lof}{\contentsline {figure}{\numberline {6.5}{\ignorespaces Main Kernel Routines for Opening a File / Allocating a File Descriptor}}{217}{}\protected@file@percent }
+\newlabel{fig:open-fd-alloc}{{6.5}{217}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.7.1}File Descriptor Allocation and File Table Expansion}{218}{}\protected@file@percent }
+\newlabel{fdalloc}{{6.7.1}{218}}
+\@writefile{lof}{\contentsline {figure}{\numberline {6.6}{\ignorespaces Simple fd allocation}}{218}{}\protected@file@percent }
+\newlabel{fig:fd_allocation_simple}{{6.6}{218}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.7.2}Allocating a \texttt  {file} Structure}{220}{}\protected@file@percent }
+\newlabel{filetable-expand}{{6.7.2}{220}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.7.3}KGDB -- Viewing File Descriptor Allocation}{220}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6.8}Pathname Resolution}{221}{}\protected@file@percent }
+\newlabel{pathname-resolution}{{6.8}{221}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.8.1}Setting the Stage for Pathname Resolution}{223}{}\protected@file@percent }
+\newlabel{pathname-set}{{6.8.1}{223}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.8.2}Initialization Structures And Starting The Process}{225}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {6.7}{\ignorespaces TBD}}{225}{}\protected@file@percent }
+\newlabel{fig:cwd-and-root-directory}{{6.7}{225}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.8.3}The Nitty Gritty of Pathname Resolution}{226}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {6.8}{\ignorespaces Repeated calls to \texttt  {walk\_component()}}}{227}{}\protected@file@percent }
+\newlabel{fig:link-path-walk}{{6.8}{227}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.8.4}Callers of \texttt  {link\_path\_walk()}}{230}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {6.9}{\ignorespaces Callers of \texttt  {link\_path\_walk()}}}{230}{}\protected@file@percent }
+\newlabel{fig:link-path-walk-callers}{{6.9}{230}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.8.5}More on Hashing}{230}{}\protected@file@percent }
+\newlabel{dcache-hash}{{6.8.5}{230}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.8.6}Handling a dcache Miss}{231}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.8.7}Crossing mount points}{231}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {6.10}{\ignorespaces Simple file hierarchy with a mounted filesystem}}{232}{}\protected@file@percent }
+\newlabel{fig:pathname-tree}{{6.10}{232}}
+\@writefile{lof}{\contentsline {figure}{\numberline {6.11}{\ignorespaces dentries for the simple file hierarchy}}{232}{}\protected@file@percent }
+\newlabel{fig:pathname-dentries}{{6.11}{232}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.8.8}Handling Symlinks}{234}{}\protected@file@percent }
+\newlabel{pathname-symlinks}{{6.8.8}{234}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.8.9}Returning From \texttt  {link\_path\_walk()}}{234}{}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {6.1}{\ignorespaces \small  Standard File Descriptors}}{234}{}\protected@file@percent }
+\newlabel{table:path-walk}{{6.1}{234}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.8.10}RCU-walk vs REF-walk}{235}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.8.11}KGDB -- Setting The Stage For Pathname Resolution}{236}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {6.12}{\ignorespaces System call handling for opening a file}}{236}{}\protected@file@percent }
+\newlabel{fig:kgdb-path}{{6.12}{236}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.8.12}KGDB -- Inside \texttt  {link\_path\_walk()} and Friends}{239}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.8.13}KGDB -- Crossing Mount Points}{242}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.8.14}Further Information on Pathname Resolution}{244}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6.9}Linux Dcache Implementation}{244}{}\protected@file@percent }
+\newlabel{vfs-dcache}{{6.9}{244}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.9.1}The Migration to RCU}{245}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.9.2}Linking Dentries Together}{245}{}\protected@file@percent }
+\newlabel{dcache-links}{{6.9.2}{245}}
+\citation{mckenney}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.9.3}The \texttt  {dentry} State Diagram}{246}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {6.13}{\ignorespaces The dentry state diagram}}{247}{}\protected@file@percent }
+\newlabel{fig:dcache-state}{{6.13}{247}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.9.4}KGDB -- Monitoring dentry Transition State}{249}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.9.5}Digging Deeper on The Core Functions}{250}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\texttt  {d\_alloc()}}{251}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {6.14}{\ignorespaces Callers of \texttt  {d\_alloc()}}}{252}{}\protected@file@percent }
+\newlabel{fig:d-alloc}{{6.14}{252}}
+\@writefile{toc}{\contentsline {subsubsection}{\texttt  {d\_alloc\_anon()}}{253}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\texttt  {retain\_dentry()} and \texttt  {d\_put}}{253}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {6.15}{\ignorespaces Adding a dentry to the superblock LRU list}}{254}{}\protected@file@percent }
+\newlabel{fig:dentry-lru-add}{{6.15}{254}}
+\@writefile{toc}{\contentsline {subsubsection}{\texttt  {d\_splice\_alias} and \texttt  {d\_instantiate()}}{254}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {6.16}{\ignorespaces Using \texttt  {d\_splice\_alias()} to add an inode to a negative dentry}}{255}{}\protected@file@percent }
+\newlabel{fig:d-splice-alias}{{6.16}{255}}
+\@writefile{toc}{\contentsline {subsubsection}{\texttt  {d\_add()}}{255}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\texttt  {d\_delete}}{255}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {6.17}{\ignorespaces Callers of \texttt  {d\_instantiate()} which are passed a negative dentry}}{256}{}\protected@file@percent }
+\newlabel{fig:d-instantiate}{{6.17}{256}}
+\@writefile{toc}{\contentsline {subsubsection}{\texttt  {d\_delete}}{256}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\texttt  {dget}}{256}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\texttt  {dput}}{256}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\texttt  {d\_drop}}{256}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\texttt  {d\_add}}{256}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.9.6}Pruning The Dcache}{256}{}\protected@file@percent }
+\newlabel{dcache-pruning}{{6.9.6}{256}}
+\@writefile{lof}{\contentsline {figure}{\numberline {6.18}{\ignorespaces Pruning dcache entries for a specific filesystem}}{257}{}\protected@file@percent }
+\newlabel{fig:dcache-prune}{{6.18}{257}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.9.7}KGDB -- Analyzing Dentries For a Simple File Hierarchy}{257}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.9.8}KGDB -- Inspecting the Per-Filesystem LRU List}{260}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.9.9}Dcache Statistics}{260}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6.10}The Inode Cache Implementation}{261}{}\protected@file@percent }
+\newlabel{vfs-inode-cache}{{6.10}{261}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.10.1}Inode Locks}{261}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6.11}The Buffer Cache Implementation}{261}{}\protected@file@percent }
+\newlabel{vfs-buffer-cache}{{6.11}{261}}
+\@writefile{toc}{\contentsline {section}{\numberline {6.12}File Creation}{261}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.12.1}Regular File Creation}{262}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.12.2}Creating Directories}{264}{}\protected@file@percent }
+\newlabel{vfs-mkdir}{{6.12.2}{264}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.12.3}Creating Symbolic Links}{266}{}\protected@file@percent }
+\newlabel{vfs-symlink}{{6.12.3}{266}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.12.4}Creating Hard Links and Device Nodes}{267}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6.13}Reading Directory Entries}{267}{}\protected@file@percent }
+\newlabel{vfs_readdir}{{6.13}{267}}
+\@writefile{toc}{\contentsline {section}{\numberline {6.14}The Linux Page Cache}{269}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.14.1}Compound Pages}{269}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.14.2}Memory Folios}{271}{}\protected@file@percent }
+\newlabel{memory-folios}{{6.14.2}{271}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.14.3}Memory Mapped Files}{272}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6.15}Reading Files}{272}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {6.19}{\ignorespaces The different ways that data is read from a file}}{273}{}\protected@file@percent }
+\newlabel{fig:vfs-read-file}{{6.19}{273}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.15.1}The \texttt  {new\_sync\_read()} and \texttt  {generic\_file\_read\_iter()} Functions}{274}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.15.2}Vectored Reads}{275}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6.16}Writing Files}{276}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.16.1}Vectored Writes}{276}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6.17}Direct I/O}{277}{}\protected@file@percent }
+\newlabel{kernel-direct-io}{{6.17}{277}}
+\@writefile{toc}{\contentsline {section}{\numberline {6.18}File Locking Implementation}{277}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6.19}Dissecting The proc Filesystem}{277}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.19.1}Use of Red-Black Trees in /proc}{278}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.19.2}KGDB --- Analyzing the \texttt  {/proc} File Tree}{279}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6.20}Quotas Implementation}{280}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6.21}Handling Pipes}{280}{}\protected@file@percent }
+\newlabel{vfs-pipes}{{6.21}{280}}
+\@writefile{toc}{\contentsline {section}{\numberline {6.22}Flushing File Data and Metadata}{280}{}\protected@file@percent }
+\newlabel{vfs-sync}{{6.22}{280}}
+\@writefile{toc}{\contentsline {section}{\numberline {6.23}Filesystem Interfaces}{280}{}\protected@file@percent }
+\newlabel{vfs-operations}{{6.23}{280}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.23.1}The \texttt  {super\_operations} Structure}{280}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{Freeze/Thaw Functions}{281}{}\protected@file@percent }
+\newlabel{freeze}{{6.23.1}{281}}
+\@writefile{toc}{\contentsline {subsubsection}{Information Gathering Functions}{282}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{Qutoas-related Functions}{282}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.23.2}The \texttt  {inode\_operations} Structure}{282}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.23.3}The \texttt  {file\_operations} Structure}{283}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.23.4}The \texttt  {address\_space\_operations} Structure}{285}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{Memory Folio Functions}{285}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{Blah blah Functions}{286}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{Swapping Functions}{287}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6.24}Conclusion}{287}{}\protected@file@percent }
+\@setckpt{vfs-interface}{
+\setcounter{page}{288}
+\setcounter{equation}{0}
+\setcounter{enumi}{4}
+\setcounter{enumii}{0}
+\setcounter{enumiii}{0}
+\setcounter{enumiv}{0}
+\setcounter{footnote}{0}
+\setcounter{mpfootnote}{0}
+\setcounter{part}{0}
+\setcounter{chapter}{6}
+\setcounter{section}{24}
+\setcounter{subsection}{0}
+\setcounter{subsubsection}{0}
+\setcounter{paragraph}{0}
+\setcounter{subparagraph}{0}
+\setcounter{figure}{19}
+\setcounter{table}{1}
+\setcounter{FancyVerbLine}{0}
+\setcounter{ALG@line}{0}
+\setcounter{ALG@rem}{0}
+\setcounter{ALG@nested}{0}
+\setcounter{ALG@Lnr}{2}
+\setcounter{ALG@blocknr}{10}
+\setcounter{ALG@storecount}{0}
+\setcounter{ALG@tmpcounter}{0}
+\setcounter{lstnumber}{6}
+\setcounter{lofdepth}{1}
+\setcounter{lotdepth}{1}
+\setcounter{lstlisting}{0}
+\setcounter{urls}{21}
+}

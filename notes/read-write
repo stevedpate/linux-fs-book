@@ -1,0 +1,43 @@
+Reading from a file
+-------------------
+
+static ssize_t 
+new_sync_read(struct file *filp, char __user *buf, size_t len, loff_t *ppos)
+{
+    struct kiocb kiocb;
+    struct iov_iter iter;
+    ssize_t ret;
+
+    init_sync_kiocb(&kiocb, filp);
+    kiocb.ki_pos = (ppos ? *ppos : 0);
+    iov_iter_ubuf(&iter, ITER_DEST, buf, len);
+
+    ret = call_read_iter(filp, &kiocb, &iter);
+    if (ppos)
+        *ppos = kiocb.ki_pos;
+    return ret;
+}
+
+
+call_read_iter simple calls file->f_op->read_iter(kio, iter) and for
+SPFS et al, we're back to the following:
+
+generic_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
+{
+    if (iocb->ki_flags & IOCB_DIRECT) {
+        ...
+    }
+    return filemap_read(iocb, iter, retval);
+}
+
+mm/filemap.c
+
+filemap_read()
+    - copied = copy_folio_to_iter(folio, offset, bytes, iter);
+
+copy_page_to_iter():
+    - void *kaddr = kmap_local_page(page);
+    - size_t n = min(bytes, (size_t)PAGE_SIZE - offset);
+    - n = _copy_to_iter(kaddr + offset, n, i);
+    - kunmap_local(kaddr);
+

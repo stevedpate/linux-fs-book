@@ -1,0 +1,1258 @@
+\chapter{Filesystem Debugging}\label{debugging}
+
+If you're doing development in the kernel you'll get used to kernel panics which can occur for a number of reasons (\cf{XXX} - list some). While developing SPFS, I ran into kernel panics when implementing support for symbolic links. I managed to create the symlink fine but doing an \cf{ls -l} on the directory where the symlink resided, resulted in a panic when trying to read the contents of the symlink (what file it was pointing to).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{Kernel Debugging with kgdb}\label{kgdb}
+
+I recall when the arguments around source level debuggers back in 2000 when we started porting VxFS to Linux. I never understood the arguments against it. Having a good debugger saves a lot of time. Granted, without one, you'll spend more time thinking through when you're coding to make sure you get things right. The rapid prototyping (write/compile/test) method can lead to some sloppiness. But a good debugger is paramount to understanding how things work. Setting breakpoints without source code support is painful. I've spent way too many years in that position.
+
+We worked on helping add \cf{kgdb} support to the Linux kernel many years ago through one of our VERITAS engineers Amit Kale. And a great help it was to our kernel engineers and many others around the world in the 20 years since.
+
+I've found that best way to understand the Linux kernel is to analyze it while running, see how the structures are linked together and watch the flow from function to function. To get going, you'll need to build your own kernel and have two Linux instances running side by one, one containing the instrumented kernel (the target) and one containing the kernel source, debugging information generated during a kernel build and \cf{gdb} through which to remotely connect to the target.
+
+Showing examples using \cf{gdb} was paramount to having a good book. But while writing I ran into so many issues getting anything to work. Since I have an Apple MacBook Air I turned to VMware Fusion to run my VMs, a hypervisor I'd used for many years. But it didn't support Apple Silicon. Neither did VirtualBox. I tried UTM. Nothing could be better than a free hypervisor could it? Well, it mostly worked. I was able to get a setup where I could run \cf{gdb} between two Linux VMs and I could access memory, view structures and so on. But no break points! After a few months I tried Fusion which had since become available. I couldn't connect between the VMs. Sigh! And VirtualBox was still in beta. I then went back to UTM and did as much as I could without breakpoint support to give the other hypervisors time to stabilize. As time passed, there was still no answer. The way I resolved it was to install two Ubuntu VMs in x86\_64 emulation. My kernel compilation went from one hour on the native ARM64 to 17 hours under emulation. But it worked and I can't stress how much easier it is to understand the paths through the kernel if you can breakpoint and walk through the kernel paths seeing what arguments are passed and being able to display various kernel structures.
+
+%------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+\subsection{Building a Kernel with kgdb Support}
+
+% https://linuxlink.timesys.com/docs/how_to_use_kgdb
+% https://www.kernel.org/doc/htmldocs/kgdb/index.html - Amit Kale's doc
+% http://www.ittc.ku.edu/~heechul/courses/eecs678/F17/labs/debuggingkernel/Debugging%20Linux%20Kernel.pdf - example for modules 
+
+Getting a kernel to compile isn't hard but can be a little fiddly at times and can differ depending on the platform. The instructions listed below are for Ubuntu 22.10. Recognizing that people will want to build SPFS for different Linux distributions, I will add those plus YouTube videos on my website so take a look there and let me know if other distributions that would be useful.
+
+To build a kernel you need a lot of disk space. I created my Ubuntu VM with 80 GB of disk space. \textbf{The OS XXX ...}
+After building the new kernel, 20GB of disk space had been used in the root filesystem (\cf{/home} is in the root filesystem on my VM by default). Be careful with partitioning though.
+
+There are distribution specific instructions for building the kernel. I'm following a more generic process that will hopefully work across distributions. I want to download a kernel from \cf{www.kernel.org}. My plan is to get a kernel version that's very close to the one that's currently running:
+
+\begin{lstlisting}
+$ [*\bfseries uname -r*]
+5.19.0-29-generic
+\end{lstlisting}
+
+\noindent
+I ended up choosing the 5.19.17 kernel sources. To get started, dowload the kernel, install the necessary development packages and \textbf{copy the current config file - make oldconfig???}:
+
+\begin{lstlisting}
+$ [*\bfseries wget https://cdn.kernel.org/pub/linux/kernel/v5.x/*] \
+[*\bfseries linux-5.19.17.tar.xz*]
+$ [*\bfseries sudo apt-get install git fakeroot build-essential*] \
+[*\bfseries ncurses-dev xz-utils libssl-dev bc flex libelf-dev bison*]
+$ [*\bfseries cd linux-5.19.17*]
+$ [*\bfseries tar xvfz linux-5.19.17.tar.xz*]
+$ [*\bfseries cp /boot/config-\$(uname -r) .config*]
+\end{lstlisting}
+
+\noindent
+Next you need to make a small number of changes to the \cf{.config} file to enable kgdb support. Since we know which configuration (config) options to change, just edit the file directly. Here are the relevant config options. I've noted which ones are on (y) or off (n) by default:
+
+\begin{lstlisting}
+CONFIG_DEBUG_KERNEL=y               # on by default
+CONFIG_DEBUG_INFO=y                 # on by default
+CONFIG_MAGIC_SYSRQ=y                # on by default
+CONFIG_KGDB=y                       # on by default
+CONFIG_KGDB_SERIAL_CONSOLE=y        # on by default
+CONFIG_KGDB_HONOUR_BLOCKLIST=y      # on by default
+CONFIG_STRICT_KERNEL_RWX=n          # on by default 
+CONFIG_STRICT_MODULE_RWX=n          # on by default  
+CONFIG_DEBUG_INFO_SPLIT=y           # commented out by default
+CONFIG_GDB_SCRIPTS=y                # on by default
+CONFIG_DEBUG_FS=y                   # on by default
+CONFIG_RANDOMIZE_BASE=n             # commented out by default
+\end{lstlisting}
+
+\noindent
+On Ubuntu you will also have to set both of the following config options to "":
+
+\begin{lstlisting}
+CONFIG_SYSTEM_TRUSTED_KEYS=""
+CONFIG_SYSTEM_REVOCATION_KEYS=""
+\end{lstlisting}
+
+\noindent
+According to the official Linux build documentation, only the following configuration options are needed: \textbf{XXX---need to check what the actual set really needs to be}
+
+\begin{lstlisting}
+# CONFIG_STRICT_KERNEL_RWX is not set
+CONFIG_FRAME_POINTER=y
+CONFIG_KGDB=y
+CONFIG_KGDB_SERIAL_CONSOLE=y
+\end{lstlisting}
+
+\noindent
+Once all that is out of the way, build the kernel. This will take a while so make sure you utilize the available CPUs. Run \cf{nproc} to get the number of CPUs and then compile as follows (for my VM \cf{nproc} returns 4):
+
+\begin{lstlisting}
+$ [*\bfseries time make -j4*]
+\end{lstlisting}
+
+\textbf{NOTE do a 2>\&1 | tee make.out and explain it but try it first. I'm compiling now so can't try it}
+
+\noindent
+I have a Ubuntu VM running on MacOS on an Apple M1 CPU and the whole build takes about an hour. I usually add the \cf{time(1)} command so I know how long it takes. This helps plan with future builds. However, to get breakpoints working I needed to run a Ubuntu VM under x86\_64 emulation. In this case, the compilation takes 17 hours.
+
+The final step is to install modules, generate a new \cf{initrd}, install the kernel and update GRUB. \textbf{XXX---need to get the right lingo}
+
+\begin{lstlisting}
+$ [*\bfseries sudo make modules\_install*]
+$ [*\bfseries sudo make install*]
+$ [*\bfseries sudo update-initramfs -c -k 5.19.17*]
+$ [*\bfseries sudo update-grub*]
+\end{lstlisting}
+
+\noindent
+One more change is needed for GRUB. We need to disable KASLR as it will make the debugging harder. This is done by booting the kernel with the \cf{nokaslr} option. To make this change, open \cf{/etc/default/grub}, find \cf{GRUB\_CMDLINE\_LINUX\_DEFAULT} and add \cf{nokaslr} within the quotes. Then update GRUB as follows:
+
+\begin{lstlisting}
+$ [*\bfseries sudo update-grub*]
+\end{lstlisting}
+
+\noindent
+At this point, you're ready to reboot.  Again, run \cf{uname -r} before and after rebooting to make sure you end up with the right kernel. So before reboot:
+
+\begin{lstlisting}
+$ [*\bfseries uname -r*]
+5.19.0-29-generic
+\end{lstlisting}
+
+\noindent
+and after reboot:
+
+\begin{lstlisting}
+$ [*\bfseries uname -r*]
+5.19.17
+\end{lstlisting}
+
+%------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+\subsection{Turning off Automatic Updates}\label{debug-noupdates}
+
+Getting a system in place to use \cf{gdb}/KGDB is painful at times so when you have it working, you don't want it disturbed and have to go through the pain once again. The biggest hurdle you'll face is your Linux distribution applying automatic updates which can include installing a new kernel. One way to avoid this is to snapshot VMs and periodically go back to the snapshot if things no longer work. Another option is to just disable automatic updates. Disabling updates isn't usually a good idea but these are test VMs. Please refer to instructions for your distribution but for Ubuntu, here are the steps to be followed.
+
+The first step is to make changes by editing the following file:
+
+\begin{lstlisting}
+$ [*\bfseries sudo vi /etc/apt/apt.conf.d/20auto-upgrades*]
+\end{lstlisting}
+
+\noindent
+Change both lines to the following (both will be \cf{"0"} by default):
+
+\begin{lstlisting}
+APT::Periodic::Update-Package-Lists "0";
+APT::Periodic::Unattended-Upgrade "0";
+\end{lstlisting}
+
+\noindent
+Afterwards, you should run the following command for the changes to take effect:
+
+\begin{lstlisting}
+$ [*\bfseries sudo dpkg-reconfigure unattended-upgrades*]
+\end{lstlisting}
+
+\noindent
+Press TAB to select "No" and press ENTER.
+
+%------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+\subsection{Connecting gdb to the Target VM}
+
+So back on the target VM, got one level above where your source code tree is and run the following to build a tar file and copy it to your \cf{kgdb} client VM:
+
+\begin{lstlisting}
+$ [*\bfseries tar cvfz linux-5.19.17.tgz linux-5.19.17*]
+$ [*\bfseries scp linux-5.19.17.tgz spate@192.168.64.9:<choose-path>/.*]
+\end{lstlisting}
+
+\noindent
+You will need to untar it on the client VM:
+
+\begin{lstlisting}
+$ [*\bfseries tar xvfz linux-5.19.17.tgz *]
+\end{lstlisting}
+
+On the kgdb client VM you'll need to install \cf{gdb} if it's not there already:
+
+\begin{lstlisting}
+$ [*\bfseries sudo apt install gdb*]
+\end{lstlisting}
+
+\noindent
+Note that you should be at the top level of the Linux source tree that was copied over from the target VM since access to symbol information will be relative from the directory in which you start \cf{gdb}. Then just run \cf{gdb} specifying the name of the binary (XXX) and then connect to the target VM:
+
+\begin{lstlisting}
+$ [*\bfseries cd linux-5.19.17*]
+$ [*\bfseries gdb vmlinux*]
+(gdb) [*\bfseries target remote tcp:192.168.64.1:1234*]
+\end{lstlisting}
+
+\noindent
+You can also load the kernel symbols as follows from within \cf{gdb} if you just run \cf{gdb} and press enter:
+
+\begin{lstlisting}
+(gdb) [*\bfseries symbol-file vmlinux*]
+\end{lstlisting}
+
+\noindent
+The "\cf{target remote}" command here is UTM-specific. If you are using a different hypervisor or physical machines, you will need to change this command. For example, on VMware Fusion, you would have: \textbf{XXX - why did I say this?}
+
+\begin{lstlisting}
+(gdb) [*\bfseries target remote 8864*] # using localhost on Apple Mac
+(gdb) [*\bfseries target remote 192.168.192.131:8864*] # connect to a remote VM
+\end{lstlisting}
+
+%------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+\subsection{\cf{gdb} Command Reference}
+
+There are many things you can do with \cf{gdb} and the most common operations have been used throughout the book. Just type "h" from within \cf{gdb} to get help. There are also several crib sheets online that can be helpful as a reference.
+
+Here is a summary of the commands that have been used throughout the book: \textbf{XXX---look at my old FS book for examples}
+
+\begin{itemize}
+	\item \cf{set print pretty on}  -- when you print structures they will be nicely formatted. "\cf{off}" will turn it off.
+	\item \cf{set pagination off} -- if something is being displayed which takes up more than a page, you'll get
+		a message to continue/quite etc. You can turn this off so everything is displayed in one go. "\cf{on}" will
+		turn it back on again.
+	\item \cf{bt} -- stack backtrace. If you supply an optional number 'n', only 'n' stack frames will be displayed.
+	\item \cf{print} -- print structures.  You can use "\cf{p}". 
+	\item \cf{break} (\cf{br}) -- set a breakpoint
+	\item \cf{tbreak} -- set a temporary breakpoint that will only be hit once and then cleared???
+	\item \cf{c} -- continue running
+	\item \cf{next} (\cf{n}) -- similar to \cf{step} but don't enter functions.
+	\item \cf{step} (\cf{s}) -- step through the program until it reaches a different source line.
+	\item \cf{delete} - delete a breakpoint. Without any arguments you are prompted as to whether you want to delete all breakpoints.
+	\item \cf{clear} -- clear a breakpoint
+	\item \cf{x} -- dump contents of memory in different formats
+	\item RETURN KEY -- repeat last command
+	\item \cf{info} -- 
+	\item \cf{add-symbol-file} -- load debugging symbols from a specified file and also included where the text and other sections
+		of the binary can be found.
+	\item \cf{source} -- execute commands from the specified file
+	\item \cf{q} -- quit \cf{gdb}. You should reply "y" to have the kernel continue running.
+\end{itemize}
+
+\noindent
+You can abbreviate each command as long at the command is still unique.  To know the extent to which you can abbreviate a command, type the first letter and hit the TAB key twice as the following example shows:
+
+\begin{lstlisting}
+(gdb) [*\bfseries l*] # followed by TAB-TAB
+layout                lx-device-list-bus    lx-list-check
+lconn                 lx-device-list-class  lx-lsmod
+list                  lx-device-list-tree   lx-mounts
+load                  lx-dmesg              lx-ps
+lx-clk-summary        lx-fdtdump            lx-symbols
+lx-cmdline            lx-genpd-summary      lx-timerlist
+lx-configdump         lx-iomem              lx-version
+lx-cpus               lx-ioports            
+(gdb) [*\bfseries list*] # followed by TAB-TAB
+\end{lstlisting}
+
+\noindent
+Just typing "\cf{l}" followed by TAB-TAB shows multiple options but "\cf{li}" followed by TAB-TAB shows only one. Therefore you are safe to use "\cf{li}" in place of "\cf{list}". For example you can use \cf{p} for \cf{print} since there are no other commands beginning with \cf{p}.
+
+The official \cf{gdb} documentation can be found here:
+
+\begin{table}[h]
+\begin{tabular}{lcl}
+\parbox[r]{0.5in}{\includegraphics[scale=0.15]{figures/url.png}} & \parbox[l]{0.55in}{URL \arabic{urls}} & \parbox[l]{3in}{\cf{https://tinyurl.com/yc49ustp}}
+\end{tabular}
+\end{table}
+\stepcounter{urls}
+% https://www.sourceware.org/gdb/documentation/
+
+\noindent
+The user manual is over 900 pages. I've found it most useful to search for \textit{gdb cheat sheet}. You will find plenty to choose from.
+
+%------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+\subsection{Linux Kernel Helper Functions}\label{gdb-helper}
+
+There are several gdb built-in functions that can help with Linux kernel debugging. These commands start with \cf{lx\_} and an abbreviated list is:
+
+\begin{lstlisting}
+(gdb) [*\bfseries apropos lx*]
+function lx_current -- Return current task.
+function lx_module -- Find module by name 
+function lx_task_by_pid -- Find Linux task by PID 
+lx-cmdline --  Commandline used in the current kernel.
+lx-cpus -- List CPU status arrays
+lx-dmesg -- Print Linux kernel log buffer.
+lx-lsmod -- List currently loaded modules.
+...
+lx-ps -- Dump Linux tasks.
+lx-version --  Report the Linux Version of the current kernel.
+\end{lstlisting}
+
+\noindent
+For these scripts to be available, you will need to add the following to your \cf{~/.gdbinit} file. Note that you will need to change the path to reference your specific Linux kernel source tree.
+
+\begin{lstlisting}
+add-auto-load-safe-path \
+/home/spate/linux-5.19.17/scripts/gdb/vmlinux-gdb.py
+
+define lconn
+    target remote tcp:192.168.64.1:1234
+end
+\end{lstlisting}
+
+\noindent
+Just change the path to reference the Linux source tree that you're using. Note that I've also defined a new function called \cf{lconn} which saves typing the "\cf{target remote ..."} line which I can never remember or wish to type that often.
+
+NOTE -- the first two lines shown should be a single line. they've been separated because the pathname doesn't fit in the width of a page! Simply combine them and remove the "\textbackslash".
+
+\textbf{macros are in kernel debug book that I have on page 568}
+
+%-------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+\subsection{Basic \cf{gdb} Examples}
+
+Here are some examples of using these commands that you will find helpful when analyzing file/filesystem structures. 
+
+\bigskip
+\noindent
+1. Dump the process list and search for a process containing the string "\cf{spate}".
+
+\begin{lstlisting}
+(gdb) [*\bfseries pipe lx-ps | grep spate*]
+\end{lstlisting}
+
+\noindent
+2. Print the contents of the \cf{task\_struct} for the process found above. 
+
+\begin{lstlisting}
+(gdb) [*\bfseries p *(struct task\_struct *)0xffff0000ed8ba180*]
+\end{lstlisting}
+
+\noindent
+3. Assign the address of the (\cf{task\_struct *}) above to a convenience variable:
+
+\begin{lstlisting}
+(gdb) [*\bfseries set \$ts = (struct task\_struct *)0xffff0000ed8ba180*]
+\end{lstlisting}
+
+\noindent
+4. Print out the above \cf{task\_struct} using the convenience variable:
+
+\begin{lstlisting}
+(gdb) [*\bfseries p *\$ts*]
+\end{lstlisting}
+
+\noindent
+5. Running \cf{lx-dmesg} to search for messages which is the same as running \cf{dmesg(8)}.
+
+\bigskip
+\noindent
+When I was debugging SPFS, I wanted to look for times that I'd set the \cf{i\_private} field of the \cf{inode} structure. I used \cf{printk} to print them out. Obviously you can't run \cf{dmesg} while sitting in the debugger. That's where the \cf{lx-dmesg} command comes in useful. Knowing that messages were printed out containing "\cf{i\_private}", the \cf{lx-dmesg} command can be run as follows:
+
+\begin{lstlisting}
+(gdb) [*\bfseries pipe lx-dmesg | grep i\_private*]
+[  125.063346] *** set i_private to ffff0000c98dd470
+[ 1200.525141] *** set i_private to ffff0000c98a6e70
+[ 1510.511176] *** set i_private to ffff0000c99bd470
+...
+\end{lstlisting}
+
+\noindent
+Sometimes it can be useful to display messages to get information (such as structure addresses) that can be used within \cf{gdb} to display the contents of structures and so on.
+
+%----------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+\subsection{Walking Lists}
+
+Not sure where this should go but ...
+
+The \cf{lx-list-check} command can be used to check a list for consistency. In the following example, we have the dentry for the root directory of the Linux tree. We display the \cf{d\_subdirs} field which is a linked list running through the child dentries' \cf{d\_child} fields. Using the same pointer, we ask \cf{lx-list-check} to check the list for consistency.
+
+\begin{lstlisting}
+(gdb) [*\bfseries p nd->path->dentry->d\_name.name*]
+$71 = (const unsigned char *) 0xffff888101c54878 "/"
+(gdb) [*\bfseries p nd->path->dentry->d\_subdirs*]
+$72 = {
+  next = 0xffff88800da08c90,
+  prev = 0xffff888130616150
+}
+(gdb)[*\bfseries  lx-list-check nd->path->dentry->d\_subdirs*]
+Starting with: {
+  next = 0xffff88800da08c90,
+  prev = 0xffff888130616150
+}
+list is consistent: 283 node(s)
+\end{lstlisting}
+
+\noindent
+XXX - build a macro?
+
+%----------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+\subsection{Setting Breakpoints and Stepping Through Code}
+
+The \cf{break} (or just \cf{br}) command is used to set breakpoints. The easiest usage is to just specify the function you want to set a breakpoint on:
+
+\begin{lstlisting}
+(gdb) [*\bfseries br vfs\_open*]
+Breakpoint 6 at 0xffffffff813e250a: vfs_open. (3 locations)
+\end{lstlisting}
+
+\noindent
+If you want to set a breakpoint in \cf{do\_filp\_open()}, but only want to hit the breakpoint if the \cf{file} argument is called "\cf{lorem-ipsum}, you can set the breakpoint as follows:
+
+\begin{lstlisting}
+(gdb) [*\bfseries br do\_filp\_open if \$\_streq(pathname->name, "lorem-ipsum")*]
+\end{lstlisting}
+
+\noindent
+If you know the PID of the process you want to trace you can use the Linux helper function to located the PID of the current process:
+
+\begin{lstlisting}
+(gdb) [*\bfseries p \$lx\_current()->pid*]
+$11 = 1095
+\end{lstlisting}
+
+\noindent
+so could also breakpoint on "pid"
+
+\begin{lstlisting}
+(gdb) [*\bfseries br do\_filp\_open if \$lx\_current()->pid == 1095*]
+\end{lstlisting}
+
+\noindent
+The current list of breakpoints can be displayed as follows:
+
+\begin{lstlisting}
+(gdb) [*\bfseries info b*]
+Num Type           Disp Enb Address            What
+4   breakpoint     keep y   0xffffffff813fe8c0 in do_filp_open 
+                                             at fs/namei.c:3678
+    stop only if $_streq(pathname->name, "lorem-ipsum")
+    breakpoint already hit 10 times
+6   breakpoint     keep y   <MULTIPLE>         
+6.1                     y   0xf...a in vfs_open at fs/open.c:977
+6.2                     y   0xf...2 in vfs_open at fs/open.c:977
+6.3                     y   0xf...0 in vfs_open at fs/open.c:976
+\end{lstlisting}
+
+\noindent
+After the kernel has hit a breakpoint and you see the \cf{(gdb)} prompt, you can move through the kernel source one line at a time, or execute multiple lines in one go, for example by having the kernel execute a function and stop on return. To execute a single line of code, type the "\cf{step}" command or just "\cf{s}". If the line to be executed is a function then \cf{gdb} will step into the function and start executing its code and you can keep entering "\cf{s}" to execute one line at a time. If you want to execute the function with one keypress, type the "\cf{next}" command or just "\cf{n}". 
+
+The following example shows stepping through \cf{filp\_open()}. The "\cf{n}" command is used to skip functions until we're about to call \cf{path\_openat()} which we would like to enter and thus, using the "\cf{s}" command.
+
+\begin{lstlisting}
+(gdb) [* \bfseries n*]
+3679		struct nameidata nd;
+(gdb) [* \bfseries n*]
+3683		set_nameidata(&nd, dfd, pathname, NULL);
+(gdb) [* \bfseries n*]
+610		p->state = 0;
+(gdb) [* \bfseries n*]
+3683		set_nameidata(&nd, dfd, pathname, NULL);
+(gdb) [* \bfseries n*]
+3684		filp = path_openat(&nd, op, flags | LOOKUP_RCU);
+(gdb) [* \bfseries s*]
+path_openat (nd=nd@entry=0xffffc90000ed3d30, 
+    op=op@entry=0xffffc90000ed3e54, flags=flags@entry=65) 
+    at fs/namei.c:3639
+3639	{
+\end{lstlisting}
+
+\noindent
+Any time you're are in \cf{gdb} and want to resume normal execution, type the "\cf{continue}" command or just "\cf{c}". The kernel will then continue running until another breakpoint is hit or you click "\cf{ctrl-c}". 
+
+%----------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+\subsection{Calling \cf{container\_of()}}\label{gdb-container}
+
+
+We have a directory that contains two files. The dentry for the directory is assigned to the convenience variable \cf{\$c2}. Let's print out the \cf{d\_subdirs} field:
+
+\begin{lstlisting}
+(gdb) [*\bfseries p \$c2*]
+$177 = (struct dentry *) 0xffff888102eb19c0
+(gdb) [*\bfseries p \$c2->d\_subdirs*]
+$178 = {
+  next = 0xffff888103050bd0,
+  prev = 0xffff8881030502d0
+}
+\end{lstlisting}
+
+\noindent
+The linked list of children goes through the \cf{d\_child} field which is part way through the \cf{dentry} structure. Using the address of \cf{\$c2} above, we can locate the address of this field:
+
+\begin{lstlisting}
+(gdb) [*\bfseries p \&\$c2->d\_child*]
+$180 = (struct list_head *) 0xffff888102eb1a50
+\end{lstlisting}
+
+\noindent
+Grab a hex calculator and you can see that:
+
+\begin{lstlisting}
+0xffff888102eb1a50 - 0xffff888102eb19c0 = 0x90
+\end{lstlisting}
+
+\noindent
+so 144 bytes from the start of the \cf{dentry} structure. You certainly don't want to be doing arithmetic everything you want to see a dentry. Therefore you can use the \cf{next} and \cf{prev} pointers shown above and from within \cf{gdb} we can call \cf{container\_of()} to get to the start of each dentry. Just specify the starting address, the type of the structure and the field within it.
+
+\begin{lstlisting}
+(gdb) [*\bfseries set \$f1 = \$container\_of(0xffff888103050bd0, \textbackslash*]
+                            [*\bfseries "struct dentry", "d\_child")*]
+(gdb) [*\bfseries set \$f2 = \$container\_of(0xffff8881030502d0, \textbackslash*]
+                            [*\bfseries "struct dentry", "d\_child")*]
+\end{lstlisting}
+
+\noindent
+and from here we have our \cf{dentry} structures so we can display the file names:
+
+\begin{lstlisting}
+(gdb) [*\bfseries p \$f1->d\_iname*]
+$160 = "hello", '\000' <repeats 26 times>
+(gdb) [*\bfseries p \$f2->d\_iname*]
+$162 = "lorem-ipsum", '\000' <repeats 20 times>
+\end{lstlisting}
+
+\noindent
+See section \ref{crash-container} to see how to achieve the same using the \cf{crash(1)} command.
+
+%----------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+\subsection{Listing Source Code}
+
+When inside \cf{gdb} you can view part of the source code for your program by using the "\cf{list}" command or just "\cf{l}".
+
+\begin{lstlisting}
+(gdb) [*\bfseries bt*]
+#0  link_path_walk (nd=0xffffc90000ed3d30, 
+    name=0xffff8881009a3020 "lorem-ipsum") at fs/namei.c:2266
+#1  path_openat (nd=nd@entry=0xffffc90000ed3d30, 
+    op=op@entry=0xffffc90000ed3e54, flags=flags@entry=65) 
+    at fs/namei.c:3653
+...
+(gdb) [*\bfseries list*]
+list
+2261	static int link_path_walk(const char *name, 
+                                  struct nameidata *nd)
+2262	{
+2263		int depth = 0; // depth <= nd->depth
+2264		int err;
+2265	
+2266		nd->last_type = LAST_ROOT;
+2267		nd->flags |= LOOKUP_PARENT;
+2268		if (IS_ERR(name))
+2269			return PTR_ERR(name);
+2270		while (*name=='/')
+\end{lstlisting}
+
+\noindent
+In response \cf{gdb} will print out source code for the lines around the current line of code to be executed. To view following lines, just press "enter". To view different lines of code, type "\cf{list [linenumber]}". My preference is to have the source code visible in an editor in another window so I can see more lines of code. I can also use tag stacking to see what code is in functions about to be executed. I then know whether to use "\cf{n}" or "\cf{s}" to continue stepping through code.
+
+%------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+\subsection{Getting Symbols From Loadable Modules}
+
+If you're experimenting with kernel modules, it's frustrating to have \cf{gdb} running, displaying structures, setting breakpoints and all the other great \cf{gdb} features, only to find that none of them work on your loadable module. That's not to say that they won't work on your loadable module but first, you need to tell \cf{gdb} where the module is loaded in memory.
+
+This is something we ran into many years ago when building Linux filesystem modules when I worked at a small startup in the San Francisco Bay Area and also something we needed at VERITAS when porting VxFS, the VERITAS filesystem to Linux in the late 90s to early 2000s. Amit Kale was in our team and he was one of the people who got \cf{kgdb} support into the Linux kernel around that time. He also wrote a nice script to do all of the following work for us. The script will come later but for now, this section will show what needs to be done.
+
+The module needs to be compiled with symbol table information for \cf{gdb}. After this, the next step is to load the module:
+
+\begin{lstlisting}
+$ [*\bfseries sudo insmod spfs.ko*]
+\end{lstlisting}
+
+\noindent
+Kernel modules, together with general application binaries, are stored in the ELF format, the \textit{Executable and Linkable Format}, a binary format that was first introduced with SVR4 UNIX. If you're interested in details, the Wikipedia page has a very nice figure that is worth looking at. 
+
+\begin{table}[h]
+\begin{tabular}{lcl}
+\parbox[r]{0.5in}{\includegraphics[scale=0.15]{figures/url.png}} & \parbox[l]{0.55in}{URL \arabic{urls}} & \parbox[l]{3in}{\cf{https://tinyurl.com/5e657c77}}
+\end{tabular}
+\end{table}
+\stepcounter{urls}
+% https://en.wikipedia.org/wiki/Executable_and_Linkable_Format#:~:text=In%20computing%2C%20the%20Executable%20and,shared%20libraries%2C%20and%20core%20dumps.
+
+\noindent
+Once upon a time, Mary Lou Nohr's book "\textit{Unix System V: Understanding Elf Object Files and Debugging Tools}" \cite{nohr} occupied space on my books shelf. At the time, I was working on an ELF loader in the SVR4 subsystem on the Chorus microkernel.
+
+Once the module is loaded we need to locate the addresses in memory of various ELF sections of the module (text, read-only data, data and BSS). This can be done as follows:
+
+\begin{lstlisting}
+$ [*\bfseries cd /sys/module/spfs/sections*]
+$ [*\bfseries sudo cat .text .rodata .data .bss*]
+0xffffffffa067b000
+0xffffffffa067d080
+0xffffffffa067e040
+0xffffffffa067ef80
+\end{lstlisting}
+
+\noindent
+After that, it's just a matter of providing this information to \cf{gdb}. Note that if you have compiled your module on the target machine, you will need to copy the source/binaries over to the client where \cf{gdb} is running:
+
+\begin{lstlisting}
+(gdb) [*\bfseries add-symbol-file /home/spate/spfs/kern/spfs.ko \textbackslash*]
+        [*\bfseries 0xffffffffa067b000 -s .rodata 0xffffffffa067d080 \textbackslash*]
+        [*\bfseries -s .data 0xffffffffa067e040 -s .bss 0xffffffffa067ef80*]
+add symbol table from file "/home/spate/spfs/kern/spfs.ko" at
+	.text_addr = 0xffffffffa067b000
+	.rodata_addr = 0xffffffffa067d080
+	.data_addr = 0xffffffffa067e040
+	.bss_addr = 0xffffffffa067ef80
+(y or n) [*\bfseries y*]
+Reading symbols from /home/spate/spfs/kern/spfs.ko...
+\end{lstlisting}
+
+\noindent
+NOTE -- jumping ahead a little here but you may find that breakpoints don't work on all functions. For example, you may set a breakpoint but the address does not look correct. And this was with correct addresses in \cf{/proc/kallsyms}. It took me a while to find a solution based on the following answer to a question on StackOverflow:
+
+\begin{quote}
+\textit{The linux kernel using unlikely/likely macro to optimize the compilation, generate .text and .text.unlikely section correspondingly.}
+
+\textit{The probe function is compiled into .text.unlikely, and add-symbol-file only add .text section to the address you assigned, which is not contains the probe function.}
+
+\textit{To solve the problem, add .text.unlikely manually in the gdb shell}
+\end{quote}
+
+\noindent
+If you see this problem then also dump the contents of the file \cf{.text.unlikely} and from within \cf{gdb} call:
+
+\begin{lstlisting}
+(gdb) [*\bfseries add-symbol-file /home/spate/spfs/kern/spfs.ko \textbackslash*]
+         [*\bfseries 0xffffffffa0673000 -s .rodata 0xffffffffa0675080 \textbackslash*]
+         [*\bfseries -s .data 0xffffffffa0676040 \textbackslash*]
+         [*\bfseries -s .bss 0xffffffffa0676f80  \textbackslash*]
+         [*\bfseries -s .text.unlikely 0xffffffffa06733d8*]
+\end{lstlisting}
+
+\noindent
+\textbf{XXX -- it would be good to come back and explain what is happening here and look at the Linux likely/unlikely paths}
+
+Now that everything is in place, check to see that the module source code can be viewed in \cf{gdb}:
+
+\begin{lstlisting}
+(gdb) [*\bfseries list sp\_find\_entry*]
+23	 * If found the inode number is returned.
+24	 */
+25	
+26	int
+27	sp_find_entry(struct inode *dip, char *name)
+28	{
+29          struct sp_inode_info  *spi = ITOSPI(dip);
+30          struct super_block    *sb = dip->i_sb;
+31          struct buffer_head    *bh;
+32          struct sp_dirent	  *dirent;
+\end{lstlisting}
+
+\noindent
+The next step is to set a breakpoint. The function \cf{spfs\_fill\_super()} is called when the filesystem is mounted so let's set a breakpoint there and mount a filesystem to check that the breakpoint is hit:
+
+\begin{lstlisting}
+(gdb) [*\bfseries br spfs\_fill\_super*]
+Breakpoint 1 at 0xffffffffa0674bb8: 
+file /home/spate/spfs/kern/sp_inode.c, line 321.
+\end{lstlisting}
+
+\noindent
+Next is to mount an SPFS filesystem:
+
+\begin{lstlisting}
+(gdb) [*\bfseries mount -t spfs /dev/loop7 /mnt*]
+\end{lstlisting}
+
+\noindent
+If everything is working correctly, the breakpoint will be hit and a stack backtrace can be displayed as follows:
+
+\begin{lstlisting}
+#0  [*\bfseries spfs\_fill\_super*] (sb=sb@entry=0xffff88810adb7000, 
+    data=data@entry=0x0 <fixed_percpu_data>,
+    silent=silent@entry=0)
+    at /home/spate/spfs/kern/sp_inode.c:321
+#1  0xffffffff813ec86e in [*\bfseries mount\_bdev*] (
+    fs_type=fs_type@entry=0xffffffffa0676aa0 <spfs_fs_type>, 
+    flags=flags@entry=0, 
+    dev_name=dev_name@entry=0xffff88811ade5350 "/dev/loop7", 
+    data=data@entry=0x0 <fixed_percpu_data>, 
+    fill_super=fill_super@entry=0xffffffffa0674bb8 
+    <spfs_fill_super>) at fs/super.c:1367
+#2  0xffffffffa067479d in [*\bfseries spfs\_mount*] (
+    fs_type=0xffffffffa0676aa0 <spfs_fs_type>, flags=0, 
+    dev_name=0xffff88811ade5350 "/dev/loop7", 
+    data=0x0 <fixed_percpu_data>)
+    at /home/spate/spfs/kern/sp_inode.c:420
+...
+\end{lstlisting}
+
+\noindent
+Assuming you've added all ELF sections for the module, you should be able to view global variables, for example:
+
+\begin{lstlisting}
+(gdb) [*\bfseries p spfs\_inode\_cache*]
+$2 = (struct kmem_cache *) 0xffff888130798f00
+\end{lstlisting}
+
+\noindent
+There should be no restrictions with using \cf{gdb} on loadable modules compared with the kernel. The only difference is if you need to debug early initialization code during module load time. There are several articles on the web that cover this topic.
+
+Note that if you are iteratively developing your module and unloading/loading it, you will need to rerun the \cf{add-symbol-file} command each time the module is loaded.
+
+\subsection{A Script to Load Modules}
+
+It's a laborious task to load a module, grab all the required ELF sections and provide that information to \cf{gdb}. The best thing is to combine it in a script so that when you run the script, you get the following output:
+
+\begin{lstlisting}
+$ [*\bfseries modcopy*]
+spfs.ko                            100%  177KB  10.9MB/s   00:00    
+add-symbol-file /home/spate/spfs/kern/spfs.ko 0xffffffffa06aa000
+-s .rodata 0xffffffffa06ac080 -s .data 0xffffffffa06ad040 
+-s .bss 0xffffffffa06adf80 -s .text.unlikely 0xffffffffa06aa3d8
+\end{lstlisting}
+
+\noindent
+Then you can just cut and paste the \cf{add-symbol-file} line to \cf{gdb}. It could also be written to a file and you can run the \cf{source} command. Perhaps it could be places in \cf{.gdbinit} but if you're constantly changing the module so unloading/loading often, that won't work too well.
+
+Here is the script. 
+
+\begin{lstlisting}
+MOD=/home/spate/spfs/kern/spfs.ko
+MODD=/sys/module/spfs/sections
+USR=spate@192.168.64.11
+
+scp $MOD $USR:/home/spate/module
+
+ssh $USR sudo insmod /home/spate/module/spfs.ko
+
+text=`ssh $USR sudo cat $MODD/.text`
+rodata=`ssh $USR sudo cat $MODD/.rodata`
+data=`ssh $USR sudo cat $MODD/.data`
+bss=`ssh $USR sudo cat $MODD/.bss`
+tunlikely=`ssh $USR sudo cat $MODD/.text.unlikely`
+
+echo "add-symbol-file /home/spate/spfs/kern/spfs.ko $text [*\textbackslash*]
+-s .rodata $rodata -s .data $data -s .bss $bss [*\textbackslash*]
+-s .text.unlikely $tunlikely"
+\end{lstlisting}
+
+\noindent
+Note that the last line should be one line only. It's been formatted to fit the page. Remove the backslashes and combine all three lines. Or just download the script from \textbf{XXX -- github}
+
+In order to get the script to work you need to be able to SSH without a password and \cf{/etc/sudoers} on the target has been modified to prevent user "\cf{spate}" from needing to type a password when running \cf{sudo}. The following line was added:
+
+\begin{lstlisting}
+spate ALL=(ALL) NOPASSWD:ALL
+\end{lstlisting}
+
+\noindent
+As a final note, the script doesn't check to see if the module is already loaded. If it is, you'll get a nice big warning anyway!
+
+%------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+\subsection{gdb User-Defined Commands}
+
+% https://sourceware.org/gdb/onlinedocs/gdb/Define.html
+
+\textbf{Show how to do gdb functions and put them in .gdbinit - need some good examples}
+
+There will be times when you want to develop new \cf{gdb} functions and test them while still inside an existing \cf{gdb} session. To achieve this, add/modify the functions in your \cf{.gdbinit} file then run the following inside \cf{gdb}:
+
+\begin{lstlisting}
+(gdb) [*\bfseries source ~/.gdbinit*]
+\end{lstlisting}
+
+\noindent
+This will execute the commands in the specified file. It will not undo or reset any commands that were in the file prior to your making changes. It will update any definitions or settings the current commands make, but it will not erase or undo any old definitions or settings.
+
+Alternatively, you can put commands/functions in another file and run the \cf{source} command to load/execute them from that file.
+
+% https://www.cse.unsw.edu.au/~learn/debugging/modules/gdb_init_file/ - for starters
+
+%------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+\subsection{I Want to Edit the Command History Using \cf{vi}}
+
+Just as with editing the command line history in the shell, I like to do the same in \cf{gdb}. To do this, simply add "\cf{set editing-mode vi}" in the file \cf{.inputrc} in your home directory. Emacs users can use  "\cf{set editing-mode emacs}" although \cf{gdb} operates in emacs mode by default. You can also type "\cf{esc-ctrl-j}" from within \cf{gdb} to enable \cf{vi} mode.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{Exploring File/Filesystem Information with eBPF}
+
+% http://bsdbackstore.eu/misc/The_eBPF_book_Yogesh_Babar.pdf - good tutorial
+
+We've covered several tools for exploring file/filesystem related information up to this point. Another method is to use eBPF, the enhanced Berkeley Packet Filter technology that has been in the Linux kernel since 2014. 
+
+You'll find everything you need to know about eBPF on Brendan Gregg's website and I recommend his book "\textit{BPF Performance Tools}".
+
+\begin{table}[h]
+\begin{tabular}{lcl}
+\parbox[r]{0.5in}{\includegraphics[scale=0.15]{figures/url.png}} & \parbox[l]{0.5in}{URL \arabic{urls}} & \parbox[l]{3in}{\cf{https://tinyurl.com/yc2y7kvy}}
+\end{tabular}
+\end{table}
+\stepcounter{urls}
+% https://www.brendangregg.com/ebpf.html
+
+\noindent
+To use \cf{bpftrace} you'll need to install it first:
+
+\begin{lstlisting}
+$ [*\bfseries sudo apt install bpftrace*]
+\end{lstlisting}
+
+\noindent
+Once installed you'll have access to \cf{bpftrace} you will see about 35 scripts in \cf{/usr/sbin/*.bt}. There are 35 different scripts here. Those related to filesystems are:
+
+\begin{itemize}
+	\item \cf{opensnoop.bt} -- trace \cf{open(2)} system calls displaying the filenames that are being opened.
+	\item \cf{vfscount.bt} -- count the different VFS calls. \textbf{XXX - what does it define as a VFS call?}
+	\item \cf{vfsstat.bt} -- count some VFS calls, with per-second summaries. \textbf{some?}
+	\item \cf{writeback.bt} -- trace file system writeback events with details.???
+\end{itemize}
+
+\noindent
+\textbf{at time of writing these fail on Ubuntu 22.04 and 22.10 - but I have had them working in the past. Revisit}
+
+\subsection{Tracing Kernel Functions with eBPF}\label{debug-ebpf}
+
+When implementing symlinks in SPFS, I had no end of issues and couldn't see why my symlink-related operations were not getting called. The obvious method was to use \cf{kgdb} and step through the kernel code but that required a lot of work I hadn't started at that time. I'd been looking at eBPF for another project so knew that it had the ability to trace kernel functions and look at return values. Therefore, I could follow the path where I walked through the kernel code, seeing which functions were getting called and which ones were not. The first step was to setup a simple script that put a kernel probe ({\bf XXX}) on the function I wanted to see whether it got called and if it did, print out the return value. Here is the script:
+
+\begin{quote}
+https://petermalmgren.com/tracing-linux-kernel-bpftrace/
+\end{quote}
+
+TBD
+
+\begin{lstlisting}
+#include <linux/path.h>
+#include <linux/dcache.h>
+
+kretprobe:vfs_readlink /pid == 11756/
+{
+    printf("returned: %d\n", retval);
+}
+\end{lstlisting}
+
+\noindent
+Before running it, I had a small program which tried to read the symlink:
+
+\begin{lstlisting}
+#include <stdio.h>
+#include <unistd.h>
+
+int
+main()
+{
+    char    buf[256];
+    size_t  sz;
+    pid_t   pid;
+
+    pid = getpid();
+    printf("pid = %d\n", pid);
+    sleep(20);
+
+    sz = readlink("/mnt/bar", buf, sizeof(buf));
+    printf("sz from readlink = %ld\n", sz);
+}
+\end{lstlisting}
+
+\noindent
+I then run the program, take note of the PID displayed, quickly modify my script and then run as follows:
+
+\begin{lstlisting}
+# [*\bfseries bpftrace ../test/watch.bt*]
+Attaching 1 probe...
+\end{lstlisting}
+
+\noindent
+I can see that the probe is attached but nothing gets displayed after the program completes \cf{sleep()} and calls \cf{readlink()}. This tells me that the kernel \cf{vfs\_readlink()} function never gets called.
+
+\subsection{Warning}
+
+\textbf{XXX}---be very careful when attaching ops to different file types (inodes). I had page\_get\_link in inode operations that were attached to a regular file. I couldn't figure out why I was getting a panic in page\_get\_link() when dealing with a regular file. The stack trace was:
+
+\begin{lstlisting}
+[  198.626623] kernel BUG at fs/namei.c:5027!
+[  198.627489] Internal error: Oops - BUG: 0 [#1] SMP
+...
+[  198.646732]  page_get_link+0x130/0x140
+[  198.646875]  pick_link+0x340/0x400
+[  198.646996]  step_into+0x290/0x3b0
+[  198.647115]  open_last_lookups+0xc4/0x41c
+[  198.647256]  path_openat+0x90/0x2c4
+[  198.647379]  do_filp_open+0xb0/0x184
+\end{lstlisting}
+
+\noindent
+nohighmem was not set for IFREG
+
+\section{Debugging With The \cf{crash(8)} Command}
+
+The {crash(1)} command has been one of my favorite tools for exploring UNIX kernels since the early 1990s and I used it extensively for describing the SCO UNIX kernel in my first book \cite{pate-unix}. The Linux version has the same feel as the older UNIX variants but has been greatly enhanced by the integration of \cf{crash} with \cf{gdb}. 
+
+First of all, here's a little history of \cf{crash} provided by David Anderson:
+
+\begin{quote}
+\textit{The Linux operating system originally lacked a built-in, traditional UNIX-like kernel crash dump facility. This was initially addressed by the Mission Critical Linux Mcore kernel patch and the LKCD (Linux Kernel Crash Dump) kernel patch from SGI in 1999, and later by the Red Hat Netdump facility in 2002, and the Red hat Diskdump facility in 2004. The upstream Linux community finally settled upon the adoption of the Kdump crash dump facility in 2006.}
+
+\textit{However, the creation of a kernel crash dump file is only half of the picture; a utility is required to be able to recognize the dumpfile format in order to read it, and to offer a useful set of commands to make sense of it.}
+
+\textit{Furthermore, to examine the contents of a live system's kernel internals from user space, the only readily available option has been to use gdb on /proc/kcore. While gdb is an incredibly powerful tool, it is designed to debug user programs, and is not at all "kernel-aware". Consequently, using gdb alone has limited usefulness when looking at kernel memory, essentially constrained to the printing of kernel data structures if the vmlinux file was built with the -g C flag, the disassembly of kernel text, and raw data dumps. Furthermore, distributions such as Red Hat Enterprise Linux have limited the access to /proc/kcore, making it unusable as a kernel memory source.}
+
+\textit{As far as kernel crash dump files are concerned, the Red Hat Netdump and uncompressed Diskdump facilities, and the Kdump facility create dump files that are readable by gdb, but aside from giving it the capability of displaying the panicking task's stack trace, it has the same constraints as when reading /proc/kcore. However, gdb cannot read LKCD, Mcore, Xen or s390/s390x dump files.}
+
+\textit{That being the state of things, the crash utility was developed as a convenient means to cover all bases, i.e., all listed dumpfile formats as well as live systems. Moreover, it is also designed to be easily enhanced to suit the specific needs of the kernel developers or analysts using it; the builtin command set can easily be extended or enhanced, and external command modules may be written and dynamically attached.}
+\end{quote}
+
+\noindent
+This section will be focusing on using \cf{crash} to analyze a live system but if you have need to debug a Linux crash dump, the \cf{crash} command will be invaluable.
+
+\subsection{Installing \cf{crash} and Linux Debugging Information}
+
+Installing \cf{crash} itself is very straightforward but having the necessary debugging information available can take a little more work and isn't always straightforward on different versions of each distribution. Here are the list of steps that were followed for Ubuntu 22.04. I suggest looking at \textbf{XXX - my website} - I will endeavor to provide information for different distributions and for different versions for each distribution. There is nothing more frustrating than trying to use a tool for learning and then to find that the tool can't be installed or at least not without a lot of effort and searching.
+
+%https://chrisjean.com/fix-apt-get-update-the-following-signatures-couldnt-be-verified-because-the-public-key-is-not-available/ - keys issue fix
+
+The first step is to \textbf{XXX what? Why didn't I write down instructions in the first place?}. Note that some lines are truncated so you will need to go to XXX for complete instructions.
+
+\begin{lstlisting}
+# [*\bfseries apt-key adv --keyserver keyserver.ubuntu.com \textbackslash*]
+        [*\bfseries --recv-keys C8CAB6595FDFF622*]
+# [*\bfseries codename=\$(lsb\_release -c | awk  '{print \$2}')*]
+# [*\bfseries sudo tee /etc/apt/sources.list.d/ddebs.list << EOF*]
+%deb http://ddebs.ubuntu.com/ ${codename}      main ...
+%deb http://ddebs.ubuntu.com/ ${codename}-security main ...
+%deb http://ddebs.ubuntu.com/ ${codename}-updates  main ...
+%deb http://ddebs.ubuntu.com/ ${codename}-proposed main ...
+EOF
+# [*\bfseries apt-get update*]
+# [*\bfseries apt-get install linux-image-\$(uname -r)-dbgsym*]
+\end{lstlisting}
+
+\noindent
+On Ubuntu 22.04 you need to XXX
+
+\begin{lstlisting}
+$ [*\bfseries echo "deb http://ddebs.ubuntu.com \$(lsb\_release -cs) main \textbackslash*]
+        [*\bfseries restricted universe multiverse" | sudo tee -a  \textbackslash*]
+        [*\bfseries /etc/apt/sources.list.d/ddebs.list*]
+
+$ [*\bfseries echo "deb http://ddebs.ubuntu.com \$(lsb\_release -cs)-updates \textbackslash*]
+        [*\bfseries main restricted universe multiverse" | sudo tee -a \textbackslash*]
+        [*\bfseries /etc/apt/sources.list.d/ddebs.list*]
+\end{lstlisting}
+
+\noindent
+and then XXX
+
+\begin{lstlisting}
+$ [*\bfseries sudo apt-get update*] # refresh repository info - will fail 
+                      # first time and display C8CAB6595FDFF622*]
+\end{lstlisting}
+
+\noindent
+- fix cert issue: - the numbers will be displayed
+
+\begin{lstlisting}
+$ [*\bfseries sudo apt-key adv --keyserver keyserver.ubuntu.com \textbackslash*]
+        [*\bfseries --recv-keys C8CAB6595FDFF622*]
+\end{lstlisting}
+
+\noindent
+- refresh repository info again
+
+\begin{lstlisting}
+$ [*\bfseries sudo apt-key adv --keyserver keyserver.ubuntu.com \textbackslash*]
+        [*\bfseries --recv-keys C8CAB6595FDFF622*]
+\end{lstlisting}
+
+\noindent
+Install the debug symbols package
+
+\begin{lstlisting}
+$ [*\bfseries sudo apt-get install linux-image-\$(uname -r)-dbgsym*]
+\end{lstlisting}
+
+\noindent
+The final step is to install \cf{crash} itself:
+
+\begin{lstlisting}
+$ [*\bfseries sudo apt install crash*]
+\end{lstlisting}
+
+\noindent
+All of the above will take up a lot of space so make sure you have at least \textbf{XXX GB of disk space available. You also need to install gcc/make etc it you want to monitor your own programs}
+
+%------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+\subsection{Upgrading the Kernel}
+
+Your kernel will get automatically upgraded from time to time so the debug version that you use with \cf{crash} will no longer work. For example, as will be shown soon, \cf{crash} is launched against ...
+
+\begin{lstlisting}
+$ [*\bfseries sudo crash /usr/lib/debug/boot/vmlinux-5.15.0-58-generic*]
+...
+WARNING: /usr/lib/debug/boot/vmlinux-5.15.0-58-generic
+         and /proc/version do not match!
+
+WARNING: /proc/version indicates kernel version: 5.15.0-60-generic
+
+crash: please use the vmlinux file for that kernel version, or
+       try using the System.map for that kernel version as an 
+       additional argument.
+\end{lstlisting}
+
+\noindent
+In this case, the correct debug symbols package is needed. You can follow the procedure in section \ref{debug-noupdates} to disable automatic updates or you can upgrade your debug symbols package. If that is the path you choose, you can use the following command to install the package for the currently running kernel:
+
+\begin{lstlisting}
+$ [*\bfseries sudo apt-get install linux-image-\$(uname -r)-dbgsym*]
+\end{lstlisting}
+
+\noindent
+you can then relaunch \cf{crash} using the correct version:
+
+\begin{lstlisting}
+$ [*\bfseries sudo crash /usr/lib/debug/boot/vmlinux-5.15.0-60-generic*]
+\end{lstlisting}
+
+\noindent
+or simply:
+
+\begin{lstlisting}
+$ [*\bfseries sudo crash /usr/lib/debug/boot/vmlinux-\$(uname -r)*]
+\end{lstlisting}
+
+
+\noindent
+At this point, \cf{crash} should work as expected.
+
+\subsection{Kernel Compilation Issues}
+
+My kernel had been compiled to have split files (???). When running \cf{crash} I got the following error:
+
+\begin{lstlisting}
+Dwarf Error: wrong unit_type in compilation unit header 
+(is DW_UT_split_compile (0x05), should be DW_UT_type 
+(0x02)) [in module /home/spate/linux-5.19.17/init/main.dwo]
+
+crash: vmlinux: no debugging data available
+\end{lstlisting}
+
+\noindent
+No idea how to fix this.
+
+\subsection{Running \cf{crash}}
+
+Now that everything is installed you run \cf{crash} on a live system by specifying a single argument containing the path to the debugging version of the kernel. This will differ based on which distribution you are using. IBM has a nice page that covers everything that is needed to install \cf{crash} on RHEL, SLES and Ubuntu. For specific distributions, documentation can be spotty and may not always work. At the time of writing I couldn't get \cf{crash} to work on Ubuntu 22.10 so went back to 22.02.
+
+\begin{table}[h]
+\begin{tabular}{lcl}
+\parbox[r]{0.5in}{\includegraphics[scale=0.15]{figures/url.png}} & \parbox[l]{0.55in}{URL \arabic{urls} -- } & \parbox[l]{3in}{\cf{https://tinyurl.com/mrx4d9k8}}
+\end{tabular}
+\end{table}
+\stepcounter{urls}
+% https://www.ibm.com/docs/en/linux-on-systems?topic=linuxonibm/liacf/oprofkernelsymrhel.html
+
+\noindent
+For Ubuntu the path is as follows. Once inside, "\cf{?}" displays commands available. There is quite a bit of information displayed on first entry.
+
+\begin{lstlisting}
+$ [*\bfseries sudo crash /usr/lib/debug/boot/vmlinux-5.15.0-58-generic*]
+
+crash 8.0.0
+Copyright (C) 2002-2021  Red Hat, Inc.
+Copyright (C) 2004, 2005, 2006, 2010  IBM Corporation
+Copyright (C) 1999-2006  Hewlett-Packard Co
+...
+For help, type "help".
+Type "apropos word" to search for commands related to "word"...
+
+      KERNEL: /usr/lib/debug/boot/vmlinux-5.15.0-58-generic
+    DUMPFILE: /proc/kcore
+...
+crash> [*\bfseries ?*]
+
+*        extend     log      rd        task                 
+alias    files      mach     repeat    timer                
+ascii    foreach    mod      runq      tree                 
+bpf      fuser      mount    search    union                
+bt       gdb        net      set       vm    
+btop     help       p        sig       vtop                 
+dev      ipcs       ps       struct    waitq                
+dis      irq        pte      swap      whatis               
+eval     kmem       ptob     sym       wr                   
+exit     list       ptov     sys       q                    
+
+crash version: 8.0.0    gdb version: 10.2
+For help on any command above, enter "help <command>".
+For help on input options, enter "help input".
+For help on output options, enter "help output".
+\end{lstlisting}
+
+\noindent
+Since many examples throughout the book look at analyzing structures of processes that are currently running, let's start with find a process using the \cf{ps} command and displaying a few fields from the \cf{task\_structure}:
+
+Since many examples throughout the book look at analyzing structures of processes that are currently running, let's start with find a process using the \cf{ps} command and displaying a few fields from the \cf{task\_structure}:Since many examples throughout the book look at analyzing structures of processes that are currently running, let's start with find a process using the \cf{ps} command and displaying a few fields from the \cf{task\_structure}:
+
+\begin{lstlisting}
+crash> [*\bfseries ps | head -3*]
+   PID PPID CPU       TASK        ST  %MEM  VSZ  RSS COMM
+   0     0   0  ffffbaa703da88c0  RU   0.0    0    0 [swapper/0]
+   0     0   1  ffff5a09c0304ec0  RU   0.0    0    0 [swapper/1]
+crash> [*\bfseries ps | grep spate*]
+  7703 5214   3  ffff5a09d824af40 IN   0.0 2056 968  open-spate
+crash> [*\bfseries task ffff5a09d824af40*]
+PID: 7703. TASK: ffff5a09d824af40 CPU: 3. COMMAND: "open-spate"
+struct task_struct {
+  ....
+  pid = 7703,
+  ....
+  fs = 0xffff5a09d0764740,
+  files = 0xffff5a09c08f7c80,
+}
+\end{lstlisting}
+
+\noindent
+The \cf{files} field is of type \cf{files\_struct} so can be displayed using the \cf{struct} command or in most cases by just typing the name of the structure and giving the address. So both of these commands produce the same result:
+
+\begin{lstlisting}
+crash> [*\bfseries struct files\_struct 0xffff5a09c08f7c80*]
+crash> [*\bfseries files\_struct 0xffff5a09c08f7c80*]
+\end{lstlisting}
+
+\noindent
+Memory can be displayed using the \cf{rd} command. This example displays an array of pointers:
+
+\begin{lstlisting}
+crash> [*\bfseries rd 0xffff5a09d4292800 4*]
+ffff5a09d4292800:  ffff5a09d97a1200 ffff5a09d97a1200 
+ffff5a09d4292810:  ffff5a09d97a1200 ffff5a09b2bf7200  
+\end{lstlisting}
+
+\noindent
+\textbf{XXX---check on the above to see what other formats there are}.
+
+There is interaction between \cf{crash} and \cf{gdb} so you can do things like:
+
+\begin{lstlisting}
+crash> [*\bfseries p file\_systems*]
+file_systems = $1 = (struct file_system_type *)0xffffbaa703f3bd50
+                                               <sysfs_fs_type>
+\end{lstlisting}
+
+\noindent
+The \cf{sys} command displays information about the running system:
+
+\begin{lstlisting}
+crash> [*\bfseries sys*]
+      KERNEL: /usr/lib/debug/boot/vmlinux-5.15.0-58-generic
+    DUMPFILE: /proc/kcore
+        CPUS: 4
+        DATE: Wed Feb  1 00:05:14 UTC 2023
+      UPTIME: 10:24:44
+LOAD AVERAGE: 0.06, 0.02, 0.00
+       TASKS: 175
+    NODENAME: 2204-crash
+     RELEASE: 5.15.0-58-generic
+     VERSION: #64-Ubuntu SMP Thu Jan 5 12:06:43 UTC 2023
+     MACHINE: aarch64  (unknown Mhz)
+      MEMORY: 4 GB
+\end{lstlisting}
+
+\noindent
+Many similar commands aren't necessarily useful if you're using \cf{crash} or \cf{gdb} for looking at running kernels for educational purposes but come in very useful when debugging core dumps to understand what was running at the time of a panic.
+
+There is a reasonable amount of information on the web about \cf{crash}. Igor Ljubuncic (aka Dedoimedo) has written a 182 page book about debugging with \cf{crash} which you can find here:
+
+\begin{table}[h]
+\begin{tabular}{lcl}
+\parbox[r]{0.5in}{\includegraphics[scale=0.15]{figures/url.png}} & \parbox[l]{0.55in}{URL \arabic{urls} -- } & \parbox[l]{3in}{\cf{https://tinyurl.com/363bbmfb}}
+\end{tabular}
+\end{table}
+\stepcounter{urls}
+% https://www.dedoimedo.com/computers/crash-analyze.html
+
+\noindent
+It was written over ten years ago but much of the material is still relevant. \textbf{XXX -- it's mostly about crash dumps and has little analysis. FInd better material}
+
+%----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+\subsection{Exploring Lists With \cf{crash}}
+
+\textbf{TBD - store the /proc stuff in SPFS with lists that can be seen in crash. Not needed - just walk the list in the SB or the inode list}
+
+The \cf{crash} command has the ability to walk Linux kernel linked lists and display all elements in a list. For example, each \cf{super\_block} structure has a list of VFS inodes for this mount point in a doubly linked list as the following shows:
+
+\begin{lstlisting}
+crash> [*\bfseries super\_block 0xffff5a09d2fcb000*]
+  ...
+  s_inodes = {
+    next = [*\bfseries 0xffff5a09d3ffb950*],
+    prev = 0xffff5a09d3ff86c8
+  },
+  ...
+\end{lstlisting}
+
+\noindent
+Using the head of the list (shown in bold), the \cf{list} command is called to display all entries. The highlighted address will be used in the next section.
+
+\begin{lstlisting}
+crash> [*\bfseries list 0xffff5a09c1f27318*]
+ffff5a09d3ffb950
+[*\bfseries ffff5a09c0ef8ff8 *]
+ffff5a09c0eff070 
+ffff5a09197f79a0 
+ffff5a09d3ffa6f0
+ffff5a09d3ff9dc0
+ffff5a09d3ff86c8
+ffff5a09d2fcb548
+\end{lstlisting}
+
+\noindent
+Section \ref{kdgb-inodelist} provides an example of walking inode and dentry lists using \cf{gdb} and \cf{crash}.
+
+%----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+\subsection{Equivalent of \cf{container\_of()} With \cf{crash}}\label{crash-container}
+
+Section \ref{container-of} describes how the \cf{container\_of()} inline function is used to located a structure given an element within the containing structure. In the example above, we are displaying linked list information in an inode structure, correspond to this field:
+
+\begin{lstlisting}
+struct inode {
+    ..
+    struct list_head    i_sb_list;
+    ...
+}
+\end{lstlisting}
+
+\noindent
+We can print out the contents of the corresponding \cf{inode} structure as follows.
+
+\begin{lstlisting}
+crash> [*\bfseries inode -l inode.i\_sb\_list ffff5a09c0ef8ff8*]
+\end{lstlisting}
+
+\noindent
+The address passed as an argument is the address highlighted in bold above.
+
+See section \ref{gdb-container} to see how to achieve the same using the \cf{gdb}.
+
+%----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+\subsection{Exploring Trees With \cf{crash}}
+
+TBD - "help tree" to look at something other than rbtrees?
+
+\textbf{XXX---come back here when I've played more and figured out what's useful - specifically "list" and "tree"}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{Conclusion}
+
+If you want to program in the Linux kernel, you need to get good at debugging. It used to be much harder than it is now as there are so many good tools available and there's a good chance someone has already hit a problem you've run into, asked on line and got several good responses.
+
+This chapter showed how to build a kernel with \cf{kgdb} support and produce symbols such that the kernel can be debugged remotely using \cf{gdb}. If you're serious about learning the Linux kernel, this is the best method to follow so you can set breakpoints and view structures in the kernel in real time. It's also worth becoming familiar with what \cf{gdb} can do so try as many examples as you can. Try making some changes to SPFS, load the module, set breakpoints and see your changes in action. It's quite a bit of work to get there but is very rewarding.
+
+The integration of \cf{gdb} with \cf{crash(1)} has produced another powerful debugging tool extending the \cf{crash} command which has been available in UNIX for several decades. Both are used throughout the book to explore kernel structures and set breakpoints to understand various code paths.
+
+But \cf{gdb} is only one such tool so explore what's possible with eBPF and \textbf{XXX---TBD}

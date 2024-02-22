@@ -1,0 +1,294 @@
+Module load
+-----------
+
+fuse_init() - fuse.c
+
+    - INIT_LIST_HEAD(&fuse_conn_list);
+    - fuse_fs_init();
+    - fuse_dev_init();
+    - fuse_sysfs_init();
+    - fuse_ctl_init();
+
+--------------------------------------------------------------------------------
+
+fuse_fs_init() - inode.c
+
+    - fuse_inode_cachep = kmem_cache_create(...)
+    - register_fuseblk();
+    - register_filesystem(&fuse_fs_type);
+
+--------------------------------------------------------------------------------
+
+fuse_dev_init() - dev.c
+
+    - fuse_req_cachep = kmem_cache_create("fuse_request", sz(struct fuse_req),
+    - misc_register(&fuse_miscdevice);
+
+    misc_register() - drivers/char/misc.c
+
+        - Register a miscellaneous device with the kernel
+
+    static struct miscdevice fuse_miscdevice = {
+        .minor = FUSE_MINOR,
+        .name  = "fuse",
+        .fops = &fuse_dev_operations,
+    };  
+
+    const struct file_operations fuse_dev_operations = {
+        .owner      = THIS_MODULE,
+        .open       = fuse_dev_open,
+        .llseek     = no_llseek,
+        .read_iter  = fuse_dev_read,
+        .splice_read    = fuse_dev_splice_read,
+        .write_iter = fuse_dev_write,
+        .splice_write   = fuse_dev_splice_write,
+        .poll       = fuse_dev_poll,
+        .release    = fuse_dev_release,
+        .fasync     = fuse_dev_fasync,
+        .unlocked_ioctl = fuse_dev_ioctl,
+        .compat_ioctl   = compat_ptr_ioctl,
+    };      
+
+--------------------------------------------------------------------------------
+
+fuse_sysfs_init() - inode.c
+
+    - kobject_create_and_add("fuse", fs_kobj);
+    - sysfs_create_mount_point(fuse_kobj, "connections");
+
+        $ ls /sys/fs/fuse
+        connections/
+
+--------------------------------------------------------------------------------
+
+fuse_ctl_init() - control.c
+
+    - register_filesystem(&fuse_ctl_fs_type);
+
+--------------------------------------------------------------------------------
+
+Mounting a FUSE filesystem
+--------------------------
+
+Instead of exporting a "mount" function, fuse exports:
+
+    static struct file_system_type fuse_fs_type = {
+        .owner      = THIS_MODULE,
+        .name       = "fuse",
+        .fs_flags   = FS_HAS_SUBTYPE | FS_USERNS_MOUNT,
+        .init_fs_context = fuse_init_fs_context,
+        .parameters = fuse_fs_parameters,
+        .kill_sb    = fuse_kill_sb_anon,
+    };
+
+so fuse_init_fs_context() gets called at some point during mount processing:
+
+    static int fuse_init_fs_context(struct fs_context *fsc)
+    {   
+        struct fuse_fs_context *ctx;
+
+        ctx = kzalloc(sizeof(struct fuse_fs_context), GFP_KERNEL);
+
+        ctx->max_read = ~0;
+        ctx->blksize = FUSE_DEFAULT_BLKSIZE;
+        ctx->legacy_opts_show = true;
+        fsc->fs_private = ctx;
+        fsc->ops = &fuse_context_ops;
+        return 0;
+    }
+
+    static const struct fs_context_operations fuse_context_ops = {
+        .free           = fuse_free_fsc,
+        .parse_param    = fuse_parse_param,
+        .reconfigure    = fuse_reconfigure,
+        .get_tree       = fuse_get_tree,    - called to get the super_block
+    };
+
+fuse_fs_context has a lot of "options" (many as bool). Some perhaps more
+interesting fields:
+
+    struct fuse_fs_context {
+        int fd;
+        struct file *file;
+        ...
+        void **fudptr;  - fuse_dev pointer to fill in
+    }
+
+fuse_mount
+----------
+
+There is also struct fuse_mount which represents a mounted FS (potentially
+a submount???). Is the FUSE server fuselib???
+
+    struct fuse_mount {
+        struct fuse_conn *fc;       - Underlying connection to the FUSE server 
+        struct super_block *sb;     - Super block for this connection
+        struct list_head fc_entry;  - Entry on fc->mounts */
+    };  
+
+This structure is stored in the s_fs_info field of the super_block and
+returned using:
+
+    fuse_mount *get_fuse_mount_super(struct super_block *sb)
+    {
+        return sb->s_fs_info;
+    }
+
+So who sets it? There are 3 places depending on the FUSE mount type:
+
+    1. fuse_get_tree_submount()
+    2. fuse_get_tree()
+    3. virtio_fs_get_tree()
+
+Let's start with fuse_get_tree(). It's in fuse_context_ops which was
+shown above (set in fuse_init_fs_context()). 
+
+    static int fuse_init_fs_context(struct fs_context *fsc)
+    {
+        fsc->ops = &fuse_context_ops;
+    }
+
+This is called from fs/super.c:
+
+/* The filesystem is invoked to get or create a superblock which can then later
+ * be used for mounting.  The filesystem places a pointer to the root to be
+ * used for mounting in @fc->root.
+ */
+
+    int vfs_get_tree(struct fs_context *fc)
+    {
+        error = fc->ops->get_tree(fc);
+        sb = fc->root->d_sb;
+        ...
+    }
+
+Here is fuse_get_tree():
+
+    static int fuse_get_tree(struct fs_context *fsc)
+    {
+        struct fuse_fs_context *ctx = fsc->fs_private;
+        struct fuse_conn *fc;
+        struct fuse_dev *fud;
+        struct fuse_mount *fm;
+        struct super_block *sb;
+
+        fc = kmalloc(sizeof(*fc), GFP_KERNEL);
+        fm = kzalloc(sizeof(*fm), GFP_KERNEL);
+        fuse_conn_init(fc, fm, fsc->user_ns, &fuse_dev_fiq_ops, NULL);
+        fc->release = fuse_free_conn;
+        fsc->s_fs_info = fm;
+
+        fud = READ_ONCE(ctx->file->private_data);
+        if (ctx->file->f_op == &fuse_dev_operations && fud) {
+            fsc->sget_key = fud->fc;
+            sb = sget_fc(fsc, fuse_test_super, fuse_set_no_super);
+            err = PTR_ERR_OR_ZERO(sb);
+            if (!IS_ERR(sb))
+                fsc->root = dget(sb->s_root);
+        } else {
+            err = get_tree_nodev(fsc, fuse_fill_super);
+        }
+    }
+
+Last bit of code is ugh but both sget_fc() and get_tree_nodev() are
+in fs/super.c
+
+    get_tree_nodev() -> vfs_get_super() -> sget_fc()
+
+and within all that fill_super() (fuse_fill_super()) will get called (latter
+case)
+
+--------------------------------------------------------------------------------
+
+fuse queues
+-----------
+
+We have super_block->s_fs_info -> fuse_mount -> fuse_conn and inside
+the fuse_conn structure is "iq" which is of type struct fuse_iqueue.
+This is where the queues appear to be:
+
+struct fuse_iqueue {
+    unsigned connected;           - Connection established 
+    wait_queue_head_t waitq;      - Readers of the connection are 
+                                    waiting on this
+    u64 reqctr;                   - The next unique request id 
+    struct list_head pending;     - The list of pending requests
+    struct list_head interrupts;  - Pending interrupts
+    
+    /** Queue of pending forgets */
+    struct fuse_forget_link forget_list_head;
+    struct fuse_forget_link *forget_list_tail;
+    
+    int forget_batch;             - Batching of FORGET requests 
+                                    (positive indicates FORGET batch)
+    
+    struct fasync_struct *fasync; - O_ASYNC requests */
+};
+
+processing queue?
+-----------------
+
+fuse_fill_super() -> fuse_fill_super_common() -> fuse_dev_alloc_install() -> fuse_dev_alloc()
+
+    struct fuse_dev *fuse_dev_alloc(void)
+    {
+        struct fuse_dev *fud;
+        struct list_head *pq;
+
+        fud = kzalloc(sizeof(struct fuse_dev), GFP_KERNEL);
+        if (!fud)
+            return NULL;
+
+        pq = kcalloc(FUSE_PQ_HASH_SIZE, sizeof(struct list_head), GFP_KERNEL);
+        if (!pq) {
+            kfree(fud);
+            return NULL;
+        }
+
+        fud->pq.processing = pq;
+        fuse_pqueue_init(&fud->pq);
+
+        return fud;
+    }
+
+int fuse_fill_super_common(struct super_block *sb, struct fuse_fs_context *ctx)
+{
+    fud = fuse_dev_alloc_install(fc);
+    *ctx->fudptr = fud;
+}
+
+static int fuse_fill_super(struct super_block *sb, struct fs_context *fsc)
+{
+    struct fuse_fs_context *ctx = fsc->fs_private;
+    err = fuse_fill_super_common(sb, ctx);
+}
+    
+-------------------------------------------------------------------------------
+
+libfuse
+-------
+
+int fuse_main_real(int argc, char *argv[], const struct fuse_operations *op,
+           size_t op_size, void *user_data)
+{   
+    struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
+    struct fuse *fuse;
+    struct fuse_cmdline_opts opts;
+    
+    fuse_parse_cmdline(&args, &opts);
+    fuse = fuse_new_31(&args, op, op_size, user_data);
+    fuse_mount(fuse,opts.mountpoint);
+    fuse_daemonize(opts.foreground);
+
+    struct fuse_session *se = fuse_get_session(fuse);
+    fuse_set_signal_handlers(se);
+
+    if (opts.singlethread)
+        res = fuse_loop(fuse);
+    else {
+        fuse_loop_mt_32(fuse, &loop_config);
+    }
+    fuse_remove_signal_handlers(se);
+    fuse_unmount(fuse);
+    fuse_destroy(fuse);
+}

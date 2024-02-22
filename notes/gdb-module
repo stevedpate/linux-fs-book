@@ -1,0 +1,22 @@
+1. Make sure you can ssh/scp without stopping for a password on the target:
+
+    On the client run:
+
+        $ ssh-keygen
+
+    and press enter / say "y" in response to questions
+
+        $ cd ~/.ssh
+        $ ssh-copy-id spate@192.168.64.11 <--- target
+
+    type the password of your user on the target when prompted
+
+    Check that it works by ssh spate@192.168.64.11
+
+2. Make sure you can sudo without a password by adding the following line
+   to /etc/sudoers:
+
+        spate ALL=(ALL) NOPASSWD:ALL
+
+
+        

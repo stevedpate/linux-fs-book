@@ -1,0 +1,340 @@
+dentry - include/linux/dcache.h
+
+struct dentry {
+
+    /* RCU lookup touched fields */
+
+    unsigned int                    d_flags;                     /* protected by d_lock */
+    seqcount_spinlock_t             d_seq;                       /* per dentry seqlock */
+    struct hlist_bl_node            d_hash;                      /* lookup hash list */
+    struct dentry                  *d_parent;                    /* parent directory */
+    struct qstr                     d_name;
+    struct inode                   *d_inode;                     /* Where the name belongs to - NULL is -ve */
+    unsigned char                   d_iname[DNAME_INLINE_LEN];   /* small names */
+
+    /* Ref lookup also touches following */
+
+    struct lockref                  d_lockref;                   /* per-dentry lock and refcount */
+    const struct dentry_operations *d_op;
+    struct super_block             *d_sb;                        /* The root of the dentry tree */
+    unsigned long                   d_time;                      /* used by d_revalidate */
+    void                           *d_fsdata;                    /* fs-specific data */
+
+    union {
+        struct list_head            d_lru;                       /* LRU list */
+        wait_queue_head_t          *d_wait;                      /* in-lookup ones only */
+    };
+    struct list_head                d_child;                     /* child of parent list */
+    struct list_head                d_subdirs;                   /* our children */
+
+    /* d_alias and d_rcu can share memory */
+
+    union {
+        struct hlist_node           d_alias;                     /* inode alias list */
+        struct hlist_bl_node        d_in_lookup_hash;            /* only for in-lookup ones */
+        struct rcu_head             d_rcu;
+    } d_u;
+} 
+
+--------------------------------------------------------------------------------
+
+inode - include/linux/fs.h
+
+struct inode {
+        umode_t                 i_mode;
+        unsigned short          i_opflags;
+        kuid_t                  i_uid;
+        kgid_t                  i_gid;
+        unsigned int            i_flags;
+
+        struct posix_acl        *i_acl;
+        struct posix_acl        *i_default_acl;
+
+        const struct inode_operations   *i_op;
+        struct super_block      *i_sb;
+        struct address_space    *i_mapping;
+
+        void                    *i_security;
+
+        /* Stat data, not accessed from path walking */
+        unsigned long           i_ino;
+        /*
+         * Filesystems may only read i_nlink directly.  They shall use the
+         * following functions for modification:
+         *
+         *    (set|clear|inc|drop)_nlink
+         *    inode_(inc|dec)_link_count
+         */
+        union {
+                const unsigned int i_nlink;
+                unsigned int __i_nlink;
+        };
+        dev_t                   i_rdev;
+        loff_t                  i_size;
+        struct timespec64       i_atime;
+        struct timespec64       i_mtime;
+        struct timespec64       i_ctime;
+        spinlock_t              i_lock; /* i_blocks, i_bytes, maybe i_size */
+        unsigned short          i_bytes;
+        u8                      i_blkbits;
+        u8                      i_write_hint;
+        blkcnt_t                i_blocks;
+
+        seqcount_t              i_size_seqcount;
+
+        /* Misc */
+        unsigned long           i_state;
+        struct rw_semaphore     i_rwsem;
+
+        unsigned long           dirtied_when;   /* jiffies of first dirtying */
+        unsigned long           dirtied_time_when;
+
+        struct hlist_node       i_hash;
+        struct list_head        i_io_list;      /* backing dev IO list */
+
+        struct bdi_writeback    *i_wb;          /* the associated cgroup wb */
+
+        /* foreign inode detection, see wbc_detach_inode() */
+        int                     i_wb_frn_winner;
+        u16                     i_wb_frn_avg_time;
+        u16                     i_wb_frn_history;
+
+        struct list_head        i_lru;          /* inode LRU list */
+        struct list_head        i_sb_list;
+        struct list_head        i_wb_list;      /* backing dev writeback list */
+        union {
+                struct hlist_head       i_dentry;
+                struct rcu_head         i_rcu;
+        };
+        atomic64_t              i_version;
+        atomic64_t              i_sequence; /* see futex */
+        atomic_t                i_count;
+        atomic_t                i_dio_count;
+        atomic_t                i_writecount;
+
+        atomic_t                i_readcount; /* struct files open RO */
+
+        union {
+                const struct file_operations    *i_fop; /* former ->i_op->default_file_ops */
+                void (*free_inode)(struct inode *);
+        };
+        struct file_lock_context        *i_flctx;
+        struct address_space    i_data;
+        struct list_head        i_devices;
+        union {
+                struct pipe_inode_info  *i_pipe;
+                struct cdev             *i_cdev;
+                char                    *i_link;
+                unsigned                i_dir_seq;
+        };
+
+        __u32                   i_generation;
+
+
+        __u32                   i_fsnotify_mask; /* all events this inode cares about */
+        struct fsnotify_mark_connector __rcu    *i_fsnotify_marks;
+
+        struct fscrypt_info     *i_crypt_info;
+
+        struct fsverity_info    *i_verity_info;
+
+        void                    *i_private; /* fs or device private pointer */
+} 
+
+--------------------------------------------------------------------------------
+
+mount - fs/mount.h
+
+    struct mount {
+        struct hlist_node        mnt_hash;
+        struct mount            *mnt_parent;
+        struct dentry           *mnt_mountpoint;
+        struct vfsmount          mnt;
+        union {
+            struct rcu_head      mnt_rcu;
+            struct llist_node    mnt_llist;
+        };
+    #ifdef CONFIG_SMP
+        struct mnt_pcp __percpu *mnt_pcp;
+    #else
+        int                      mnt_count;
+        int                      mnt_writers;
+    #endif
+        struct list_head         mnt_mounts;      /* list of children, anchored here */
+        struct list_head         mnt_child;       /* and going through their mnt_child */
+        struct list_head         mnt_instance;    /* mount instance on sb->s_mounts */
+        const char              *mnt_devname;     /* Name of device e.g. /dev/dsk/hda1 */
+        struct list_head         mnt_list;
+        struct list_head         mnt_expire;      /* link in fs-specific expiry list */
+        struct list_head         mnt_share;       /* circular list of shared mounts */
+        struct list_head         mnt_slave_list;  /* list of slave mounts */
+        struct list_head         mnt_slave;       /* slave list entry */
+        struct mount            *mnt_master;      /* slave is on master->mnt_slave_list */
+        struct mnt_namespace    *mnt_ns;          /* containing namespace */
+        struct mountpoint       *mnt_mp;          /* where is it mounted */
+        union {
+            struct hlist_node    mnt_mp_list;     /* list mounts with the same mountpoint */
+            struct hlist_node    mnt_umount;
+        };
+        struct list_head         mnt_umounting;   /* list entry for umount propagation */
+    #ifdef CONFIG_FSNOTIFY
+        struct fsnotify_mark_connector __rcu *mnt_fsnotify_marks;
+        __u32 mnt_fsnotify_mask;
+    #endif
+        int                      mnt_id;          /* mount identifier */
+        int                      mnt_group_id;    /* peer group identifier */
+        int                      mnt_expiry_mark; /* true if marked for expiry */
+        struct hlist_head        mnt_pins;
+        struct hlist_head        mnt_stuck_children;
+    }
+
+--------------------------------------------------------------------------------
+
+super_block - include/linux/fs.h
+
+struct super_block {
+    struct list_head    s_list;     /* Keep this first */
+    dev_t           s_dev;      /* search index; _not_ kdev_t */
+    unsigned char       s_blocksize_bits;
+    unsigned long       s_blocksize;
+    loff_t          s_maxbytes; /* Max file size */
+    struct file_system_type *s_type;
+    const struct super_operations   *s_op;
+    const struct dquot_operations   *dq_op;
+    const struct quotactl_ops   *s_qcop;
+    const struct export_operations *s_export_op;
+    unsigned long       s_flags;
+    unsigned long       s_iflags;   /* internal SB_I_* flags */
+    unsigned long       s_magic;
+    struct dentry       *s_root;
+    struct rw_semaphore s_umount;
+    int         s_count;
+    atomic_t        s_active;
+#ifdef CONFIG_SECURITY
+    void                    *s_security;
+#endif
+    const struct xattr_handler **s_xattr;
+#ifdef CONFIG_FS_ENCRYPTION
+    const struct fscrypt_operations *s_cop;
+    struct key      *s_master_keys; /* master crypto keys in use */
+#endif
+#ifdef CONFIG_FS_VERITY
+    const struct fsverity_operations *s_vop;
+#endif
+#if IS_ENABLED(CONFIG_UNICODE)
+    struct unicode_map *s_encoding;
+    __u16 s_encoding_flags;
+#endif
+    struct hlist_bl_head    s_roots;    /* alternate root dentries for NFS */
+    struct list_head    s_mounts;   /* list of mounts; _not_ for fs use */
+    struct block_device *s_bdev;
+    struct backing_dev_info *s_bdi;
+    struct mtd_info     *s_mtd;
+    struct hlist_node   s_instances;
+    unsigned int        s_quota_types;  /* Bitmask of supported quota types */
+    struct quota_info   s_dquot;    /* Diskquota specific options */
+
+    struct sb_writers   s_writers;
+
+    /*
+     * Keep s_fs_info, s_time_gran, s_fsnotify_mask, and
+     * s_fsnotify_marks together for cache efficiency. They are frequently
+     * accessed and rarely modified.
+     */
+    void            *s_fs_info; /* Filesystem private info */
+
+    /* Granularity of c/m/atime in ns (cannot be worse than a second) */
+    u32         s_time_gran;
+    /* Time limits for c/m/atime in seconds */
+    time64_t           s_time_min;
+    time64_t           s_time_max;
+#ifdef CONFIG_FSNOTIFY
+    __u32           s_fsnotify_mask;
+    struct fsnotify_mark_connector __rcu    *s_fsnotify_marks;
+#endif
+
+    char            s_id[32];   /* Informational name */
+    uuid_t          s_uuid;     /* UUID */
+
+    unsigned int        s_max_links;
+    fmode_t         s_mode;
+
+    /*
+     * The next field is for VFS *only*. No filesystems have any business
+     * even looking at it. You had been warned.
+     */
+    struct mutex s_vfs_rename_mutex;    /* Kludge */
+
+    /*
+     * Filesystem subtype.  If non-empty the filesystem type field
+     * in /proc/mounts will be "type.subtype"
+     */
+    const char *s_subtype;
+
+    const struct dentry_operations *s_d_op; /* default d_op for dentries */
+
+    struct shrinker s_shrink;   /* per-sb shrinker handle */
+
+    /* Number of inodes with nlink == 0 but still referenced */
+    atomic_long_t s_remove_count;
+
+    /*
+     * Number of inode/mount/sb objects that are being watched, note that
+     * inodes objects are currently double-accounted.
+     */
+    atomic_long_t s_fsnotify_connectors;
+
+    /* Being remounted read-only */
+    int s_readonly_remount;
+
+    /* per-sb errseq_t for reporting writeback errors via syncfs */
+    errseq_t s_wb_err;
+
+    /* AIO completions deferred from interrupt context */
+    struct workqueue_struct *s_dio_done_wq;
+    struct hlist_head s_pins;
+
+    /*
+     * Owning user namespace and default context in which to
+     * interpret filesystem uids, gids, quotas, device nodes,
+     * xattrs and security labels.
+     */
+    struct user_namespace *s_user_ns;
+
+    /*
+     * The list_lru structure is essentially just a pointer to a table
+     * of per-node lru lists, each of which has its own spinlock.
+     * There is no need to put them into separate cachelines.
+     */
+    struct list_lru     s_dentry_lru;
+    struct list_lru     s_inode_lru;
+    struct rcu_head     rcu;
+    struct work_struct  destroy_work;
+
+    struct mutex        s_sync_lock;    /* sync serialisation lock */
+
+    /*
+     * Indicates how deep in a filesystem stack this SB is
+     */
+    int s_stack_depth;
+
+    /* s_inode_list_lock protects s_inodes */
+    spinlock_t      s_inode_list_lock ____cacheline_aligned_in_smp;
+    struct list_head    s_inodes;   /* all inodes */
+
+    spinlock_t      s_inode_wblist_lock;
+    struct list_head    s_inodes_wb;    /* writeback inodes */
+} 
+
+--------------------------------------------------------------------------------
+
+vfsmount - include/linux/mount.h
+
+    struct vfsmount {
+        struct dentry         *mnt_root;    /* root of the mounted tree */
+        struct super_block    *mnt_sb;      /* pointer to superblock */
+        int                    mnt_flags;
+        struct user_namespace *mnt_userns;
+    } 
+
+--------------------------------------------------------------------------------

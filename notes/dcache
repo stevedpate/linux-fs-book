@@ -1,0 +1,207 @@
+LRU list
+--------
+
+DCACHE_LRU_LIST is set/unset when a dentry is being added/removed from the LRU list as follows:
+
+    static void d_lru_add(struct dentry *dentry)
+    {   
+        dentry->d_flags |= DCACHE_LRU_LIST;
+        list_lru_add(&dentry->d_sb->s_dentry_lru, &dentry->d_lru);
+    }       
+        
+    static void d_lru_del(struct dentry *dentry)
+    {           
+        dentry->d_flags &= ~DCACHE_LRU_LIST;
+        list_lru_del(&dentry->d_sb->s_dentry_lru, &dentry->d_lru);
+    }
+
+d_lru_add() is only called by retain_dentry() and callers of retain_dentry() are
+
+    dput() 
+    dentry_kill() 
+    dput_to_list()
+
+d_lru_del() is called from:
+
+    dentry_kill() 
+    __dentry_kill() 
+    __dput_to_list()  <- dput_to_list(), shrink_dentry_list(), shrink_dcache_parent()
+    select_collect() 
+    select_collect2()
+
+__dput_to_list()
+{
+    if (dentry->d_flags & DCACHE_LRU_LIST)
+        d_lru_del(dentry);
+    if (!--dentry->d_lockref.count)
+            d_shrink_add(dentry, list);
+}
+
+------------------------------------------------------------------------------
+
+DCACHE_REFERENCED flag
+----------------------
+
+#define DCACHE_REFERENCED       0x00000040 /* Recently used, don't discard. */
+
+Not many references:
+
+  File     Function           Line
+0 dcache.h <global>            171 #define DCACHE_REFERENCED 0x00000040
+1 dcache.c retain_dentry       686 else if (unlikely(!(dentry->d_flags &
+                                   DCACHE_REFERENCED)))
+2 dcache.c retain_dentry       687 dentry->d_flags |= DCACHE_REFERENCED;
+3 dcache.c fast_dput           833 d_flags &= DCACHE_REFERENCED |
+                                   DCACHE_LRU_LIST |
+4 dcache.c fast_dput           837 if (d_flags == (DCACHE_REFERENCED |
+                                   DCACHE_LRU_LIST) && !d_unhashed(dentry))
+5 dcache.c dentry_lru_isolate 1231 if (dentry->d_flags & DCACHE_REFERENCED) {
+6 dcache.c dentry_lru_isolate 1232 dentry->d_flags &= ~DCACHE_REFERENCED;
+
+It's only turned off in dentry_lru_isolate() and this function is only
+called by prune_dcache_sb() which in turn is only called by super_cache_scan()
+
+It is turned on by retain_dentry().
+
+--------------------------------------------------------------------------------
+
+Big function call table
+-----------------------
+
+Find all the callers of routines in the state diagram
+
+Callers of d_alloc_anon()
+
+    d_alloc_cursor()    -
+    d_make_root()       - 
+    d_make_root()       - 
+    __d_obtain_alias()  - 
+    __ns_get_path()     - 
+    ovl_obtain_alias    - 
+
+Callers of d_alloc()
+
+    d_add_ci()              - lookup or allocate new dentry with case-exact name
+    d_alloc_name()          - called by procfs, configfs,SELinux and others. Sometimes
+                              to create a dentry for the root inode and in
+                              the case of procfs
+    __lookup_hash()
+
+Callers of __lookup_hash():
+
+    filename_create()   - 
+    do_rmdir()          - 
+    do_unlinkat()       - 
+    do_renameat2()      - 
+    do_renameat2()      - 
+
+Callers of d_add()
+
+------------------------------------------------------------------------------
+
+d_instantiate() is called by filesystems once they have the inode. This function does the following:
+
+        spin_lock(&inode->i_lock);
+        __d_instantiate(entry, inode);
+        spin_unlock(&inode->i_lock);
+
+and this function adds the dentry to the inode list to help with renames etc I guess/??
+
+static void 
+__d_instantiate(struct dentry *dentry, struct inode *inode)
+{
+    unsigned add_flags = d_flags_for_inode(inode);
+
+    hlist_add_head(&dentry->d_u.d_alias, &inode->i_dentry);
+    __d_set_inode_and_type(dentry, inode, add_flags);
+}
+
+static inline void 
+__d_set_inode_and_type(struct dentry *dentry,
+                      struct inode *inode,
+                      unsigned type_flags)
+{   
+    unsigned flags;
+
+    dentry->d_inode = inode;
+    flags = READ_ONCE(dentry->d_flags);
+    flags &= ~(DCACHE_ENTRY_TYPE | DCACHE_FALLTHRU);
+    flags |= type_flags;
+    smp_store_release(&dentry->d_flags, flags);
+}
+
+--------------------------------------------------------------------------------
+
+All references to the dentry d_hash field
+
+Initialize:
+
+    __d_alloc()                 INIT_HLIST_BL_NODE(&dentry->d_has
+
+Add to hash list:
+
+    __d_rehash()                hlist_bl_add_head_rcu(&entry->d_h
+    __d_instantiate_anon()      hlist_bl_add_head(&dentry->d_hash
+
+Remmove from hash list:
+
+    Note that __d_drop() calls ___d_drop() first
+
+    ___d_drop()                  __hlist_bl_del(&dentry->d_hash);
+    __d_drop()                   dentry->d_hash.pprev = NULL;
+
+Accessed
+
+    shrink_dcache_for_umount()  dentry = dget(hlist_bl_entry(hlist_bl_firs
+                                               t(&sb->s_roots), struct dentry,
+                                               d_hash));
+
+
+__d_move()                  target->d_hash.pprev = NULL;
+
+--------------------------------------------------------------------------------
+
+Adding to the hash list (via d_hash)
+
+__d_rehash() adds a dentry to the hash list.
+
+Callers:
+
+    d_rehash()      - afs_*() / exfat_lookup() / shmem_whiteout()
+    __d_add()       - d_add() / d_splice_alias()
+    d_exact_alias() - _nfs4_open_and_get_state() only
+    __d_move()      - d_exchange() / __d_unalias() / d_splice_alias()
+
+__d_move() <- d_move() / d_exchange() / __d_unlias() / d_splice_alias()
+
+d_move()            - moving a filename
+d_exchange()        - exchange two dentries
+__d_unlias()        - attempts to cope with remotely renamed directories
+d_splice_alias()    - usual
+
+NOTE - __d_instantiate_anon() does the following:
+
+        hlist_bl_add_head(&dentry->d_hash, &dentry->d_sb->s_roots);
+
+--------------------------------------------------------------------------------
+
+Moving to -ve dentry
+--------------------
+
+__dentry_kill() ->
+d_delete()      -> dentry_unlink_inode() -> __d_clear_type_and_inode()
+
+__d_clear_type_and_inode() creates a -ve dentry and sets "d_inode = NULL"
+
+
+vfs_unlink() -> d_delete_notify(dir, dentry) -> d_delete(dentry)
+
+
+
+--------------------------------------------------------------------------------
+
+Pruning
+-------
+
+--------------------------------------------------------------------------------
+

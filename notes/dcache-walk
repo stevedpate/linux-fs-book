@@ -1,0 +1,126 @@
+We have the following files:
+
+\begin{lstlisting}
+# [*\bfseries find /mnt*]
+/mnt
+/mnt/lost+found
+/mnt/mydir
+/mnt/mydir/lorem-ipsum
+/mnt/mydir/hello
+\end{lstlisting}
+
+\noindent
+Let's get the root dentry:
+
+\begin{lstlisting}
+(gdb) [*\bfseries pipe p *$sb | grep s_root*]
+  s_root = 0xffff888101cc7540,
+(gdb) [*\bfseries set $rd = (struct dentry *)0xffff888101cc7540*]
+\end{lstlisting}
+
+\noindent
+We can see that its parent is the same address (this root of a filesystem) and that the name is "/".
+
+\begin{lstlisting}
+(gdb) [*\bfseries p $rd->d_parent*]
+$142 = (struct dentry *) 0xffff888101cc7540
+(gdb) [*\bfseries p *$rd->d_iname*]
+$141 = 47 '/'
+\end{lstlisting}
+
+\noindent
+Now let's look at the flags field:
+
+\begin{lstlisting}
+(gdb) [*\bfseries p/x $rd->d_flags*]
+$144 = 0x200000
+\end{lstlisting}
+
+\noindent
+\begin{lstlisting}
+#define DCACHE_DIRECTORY_TYPE       0x00200000 /* Normal directory */
+\end{lstlisting}
+
+\noindent
+Good, now let's look at d_subdirs:
+
+\begin{lstlisting}
+(gdb) [*\bfseries p $rd->d_subdirs*]
+$145 = {
+  next = 0xffff888102eb3e10,
+  prev = 0xffff888102eb1a50
+}
+(gdb) [*\bfseries set $d1 = (struct dentry *)0xffff888102eb3e10*]
+(gdb) [*\bfseries set $d2 = (struct dentry *)0xffff888102eb1a50*]
+\end{lstlisting}
+
+\noindent
+xxx
+
+\begin{lstlisting}
+(gdb) [*\bfseries set $c1 = $container_of($d1, "struct dentry", "d_child")*]
+(gdb) [*\bfseries set $c2 = $container_of($d2, "struct dentry", "d_child")*]
+\end{lstlisting}
+
+\noindent
+xxx
+
+\begin{lstlisting}
+(gdb) [*\bfseries p $c1->d_iname*]
+$152 = "lost+found", '\000' <repeats 21 times>
+(gdb) [*\bfseries p $c2->d_iname*]
+$153 = "mydir", '\000' <repeats 26 times>
+\end{lstlisting}
+
+\noindent
+xxx
+
+\begin{lstlisting}
+(gdb) [*\bfseries p/x $c1->d_flags*]
+$155 = 0x280040
+(gdb) [*\bfseries p/x $c2->d_flags*]
+$156 = 0x280040
+\end{lstlisting}
+
+\noindent
+Let's look at the flags:
+
+\begin{lstlisting}
+#define DCACHE_LRU_LIST         0x00080000
+#define DCACHE_REFERENCED       0x00000040 /* Recently used, don't discard. */
+#define DCACHE_DIRECTORY_TYPE   0x00200000 /* Normal directory */
+\end{lstlisting}
+
+\noindent
+Now let's look at the child files:
+
+\begin{lstlisting}
+(gdb) [*\bfseries set $f1 = $container_of(0xffff888103050bd0, "struct dentry", "d_child")*]
+(gdb) [*\bfseries set $f2 = $container_of(0xffff8881030502d0, "struct dentry", "d_child")*]
+\end{lstlisting}
+
+\begin{lstlisting}
+(gdb) [*\bfseries p $f1->d_iname*]
+$160 = "hello", '\000' <repeats 26 times>
+(gdb) [*\bfseries p $f2->d_iname*]
+$162 = "lorem-ipsum", '\000' <repeats 20 times>
+\end{lstlisting}
+
+\noindent
+and their flags:
+
+\begin{lstlisting}
+(gdb) [*\bfseries p/x $f1->d_flags*]
+$164 = 0x480040
+(gdb) [*\bfseries p/x $f2->d_flags*]
+$163 = 0x480040
+\end{lstlisting}
+
+\begin{lstlisting}
+#define DCACHE_LRU_LIST         0x00080000
+#define DCACHE_REFERENCED       0x00000040 /* Recently used, don't discard. */
+#define DCACHE_REGULAR_TYPE     0x00400000 /* Regular file type (or fallthru to such) */
+\end{lstlisting}
+
+\noindent
+If we now run "less lorem-ipsum" the flags don't change!

@@ -1,0 +1,43 @@
+Disk layout
+-----------
+
+SP_BSIZE			1024
+SP_DIRECT_BLOCKS	32
+
+Superblock
+----------
+
+
+struct sp_superblock {
+	01		__u32   s_magic;
+	02		__u32   s_mod;
+	03		__u32   s_nifree;
+	04		__u32   s_inode[SP_MAXFILES];
+	05		__u32   s_nbfree;
+	06		__u32   s_block[SP_MAXBLOCKS];
+
+4 fields of 4 bytes = 16 bytes
+s_inode = 32 * 4 = 128 bytes
+s_block = 470 * 4 = 1,880
+
+Total size = 2024 bytes
+
+Inodes
+------
+
+struct sp_inode {
+	01		__u32   i_mode;
+	02		__u32   i_nlink;
+	03		__u32   i_atime;
+	04		__u32   i_mtime;
+	05		__u32   i_ctime;
+	06		__u32   i_uid;
+	07		__u32   i_gid;
+	08		__u32   i_size;
+	09		__u32   i_blocks;
+	10		__u32   i_addr[SP_DIRECT_BLOCKS];
+
+(9 fields * 4) = 36 bytes 
+(32 i_addr * 4) = 128 bytes
+
+Total size = 1024 bytes

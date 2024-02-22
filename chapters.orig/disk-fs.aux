@@ -1,0 +1,110 @@
+\relax 
+\@writefile{toc}{\contentsline {chapter}{\numberline {7}Building a Linux Filesystem}{289}{}\protected@file@percent }
+\@writefile{lof}{\addvspace {10\p@ }}
+\@writefile{lot}{\addvspace {10\p@ }}
+\newlabel{disk-fs}{{7}{289}}
+\@writefile{toc}{\contentsline {section}{\numberline {7.1}The SPFS on-disk Format}{290}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {7.1}{\ignorespaces Filesystem layout on disk}}{291}{}\protected@file@percent }
+\newlabel{fig:fslayout}{{7.1}{291}}
+\@writefile{toc}{\contentsline {section}{\numberline {7.2}A Note About Printing Pointers}{291}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {7.3}From Module Load to Mounting a Filesystem}{291}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {7.2}{\ignorespaces Module Initialization}}{292}{}\protected@file@percent }
+\newlabel{fig:module-load}{{7.2}{292}}
+\@writefile{lof}{\contentsline {figure}{\numberline {7.3}{\ignorespaces The list of available Linux filesystems that can be mounted}}{293}{}\protected@file@percent }
+\newlabel{fig:filesystems-available}{{7.3}{293}}
+\@writefile{toc}{\contentsline {section}{\numberline {7.4}Initializing the per-filesystem Inode Cache}{293}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {7.4}{\ignorespaces Inode LRU List referenced from the \texttt  {super\_block} structure}}{295}{}\protected@file@percent }
+\newlabel{fig:inode-lru-list}{{7.4}{295}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.4.1}KGDB - Analyzing Inode Lists for a Specific Mountpoint}{295}{}\protected@file@percent }
+\newlabel{kdgb-inodelist}{{7.4.1}{295}}
+\@writefile{toc}{\contentsline {section}{\numberline {7.5}Mounting a Filesystem}{299}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {7.5}{\ignorespaces Per-mount structures following a call to \texttt  {sp\_fill\_super()}}}{300}{}\protected@file@percent }
+\newlabel{fig:per-mount-structures}{{7.5}{300}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.5.1}Inside \texttt  {sp\_mount} and \texttt  {sp\_fill\_super}}{300}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {7.6}SPFS super\_operations}{301}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.6.1}KGDB -- Analyzing the Effects of a Mount Operation}{301}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {7.7}Unmounting}{303}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {7.6}{\ignorespaces Calls into SPFS when creating a file}}{304}{}\protected@file@percent }
+\newlabel{fig:create-file}{{7.6}{304}}
+\@writefile{toc}{\contentsline {section}{\numberline {7.8}Creating a File}{304}{}\protected@file@percent }
+\newlabel{spfs-lookup}{{7.8}{304}}
+\@writefile{toc}{\contentsline {section}{\numberline {7.9}Creating a File}{304}{}\protected@file@percent }
+\newlabel{spfs-create-file}{{7.9}{304}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.9.1}Inside \texttt  {sp\_find\_entry()}}{305}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {7.7}{\ignorespaces The root directory with 96 entries}}{306}{}\protected@file@percent }
+\newlabel{fig:sp-filldir}{{7.7}{306}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.9.2}Inside \texttt  {sp\_create\_file()}}{307}{}\protected@file@percent }
+\newlabel{create-file}{{7.9.2}{307}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.9.3}Inside \texttt  {sp\_new\_inode()}}{308}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.9.4}Inside \texttt  {sp\_ialloc()}}{308}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.9.5}More on Negative dentries}{309}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {7.10}Creating a Directory}{309}{}\protected@file@percent }
+\newlabel{spfs-mkdir}{{7.10}{309}}
+\@writefile{lof}{\contentsline {figure}{\numberline {7.8}{\ignorespaces Structures Allocated/Modified on Disk When Creating a Directory}}{310}{}\protected@file@percent }
+\newlabel{fig:mkdir}{{7.8}{310}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.10.1}KGDB -- Handling the \texttt  {mkdir(2)} System Call}{311}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {7.11}Reading Directory Entries}{312}{}\protected@file@percent }
+\newlabel{diskfs-statfs}{{7.11}{312}}
+\@writefile{lof}{\contentsline {figure}{\numberline {7.9}{\ignorespaces Reading from a directory with 40 entries}}{313}{}\protected@file@percent }
+\newlabel{fig:readdir}{{7.9}{313}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.11.1}KGDB -- Kernel Paths for Reading Directories}{313}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {7.12}Writing to a File}{315}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.12.1}KGDB -- Handling the \texttt  {write(2)} System Call}{317}{}\protected@file@percent }
+\newlabel{vfs}{{7.12.1}{317}}
+\@writefile{toc}{\contentsline {section}{\numberline {7.13}Reading from a File}{320}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.13.1}KGDB -- Handling the \texttt  {read(2)} System Call}{322}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {7.14}Memory Mapped Files}{324}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {7.15}Removing a File}{324}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.15.1}KGDB -- Handling the \texttt  {unlink(2)} System Call}{326}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {7.16}Renaming a File}{327}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.16.1}KGDB -- Handling the \texttt  {rename(2)} System Call}{327}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {7.17}Other Operations}{328}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {7.18}Obtaining Filesystem Information via statfs}{329}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.18.1}KGDB -- Handling the \texttt  {statfs(2)} System Call}{330}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {7.19}Hard Links and Symbolic Links}{331}{}\protected@file@percent }
+\newlabel{diskfs-links}{{7.19}{331}}
+\@writefile{toc}{\contentsline {section}{\numberline {7.20}Integration with /proc}{332}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {7.21}The SPFS \texttt  {fsdb} Command}{332}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {7.22}File Undelete}{334}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {7.10}{\ignorespaces Changes needed to implement file undelete}}{335}{}\protected@file@percent }
+\newlabel{fig:undelete}{{7.10}{335}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.22.1}Enhancing Undelete}{336}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.22.2}Why Undelete is More Complex Than you Might Think?}{336}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {7.23}How to Test SPFS}{337}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.23.1}Testing a Commercial Filesystem}{337}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {7.24}An Extended SPFS Filesystem}{338}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {7.25}Notes}{339}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {7.26}debugfs?}{339}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {7.27}Conclusion}{339}{}\protected@file@percent }
+\@setckpt{disk-fs}{
+\setcounter{page}{341}
+\setcounter{equation}{0}
+\setcounter{enumi}{3}
+\setcounter{enumii}{0}
+\setcounter{enumiii}{0}
+\setcounter{enumiv}{0}
+\setcounter{footnote}{0}
+\setcounter{mpfootnote}{0}
+\setcounter{part}{0}
+\setcounter{chapter}{7}
+\setcounter{section}{27}
+\setcounter{subsection}{0}
+\setcounter{subsubsection}{0}
+\setcounter{paragraph}{0}
+\setcounter{subparagraph}{0}
+\setcounter{figure}{10}
+\setcounter{table}{0}
+\setcounter{FancyVerbLine}{0}
+\setcounter{ALG@line}{8}
+\setcounter{ALG@rem}{8}
+\setcounter{ALG@nested}{0}
+\setcounter{ALG@Lnr}{2}
+\setcounter{ALG@blocknr}{10}
+\setcounter{ALG@storecount}{0}
+\setcounter{ALG@tmpcounter}{0}
+\setcounter{lstnumber}{4}
+\setcounter{lofdepth}{1}
+\setcounter{lotdepth}{1}
+\setcounter{lstlisting}{0}
+\setcounter{urls}{22}
+}

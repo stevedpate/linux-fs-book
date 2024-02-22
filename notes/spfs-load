@@ -1,0 +1,84 @@
+Starting again after a break ...
+
+1. Boot x86 VMs
+
+2. "fs" command copies ~spate/spfs to the target
+
+    - See "IP=192.168.64.11" at the top of the script
+
+3. On the target, build the kernel and commands:
+
+    $ cd ~/spfs/kern ; make
+    $ cd ~/spfs/cmds ; make fsdb mkfs
+
+4. Load the kernel module
+
+    $ cd
+    $ sudo insmod ~/spfs/kern/spfs.ko
+
+5. Copy the kernel sources to the client from the target:
+
+    $ cp -r spfs client:~/.
+
+6. Back on the target, get the symbol information and load into gdb
+
+    $ cd /sys/module/spfs/sections
+    $ $ sudo cat .text .rodata .data .bss .text.unlikely
+    0xffffffffa0667000
+    0xffffffffa0669080
+    0xffffffffa066a040
+    0xffffffffa066af80
+    0xffffffffa06673d8
+
+    from within gdb:
+
+    (gdb) add-symbol-file /home/spate/spfs/kern/spfs.ko 0xffffffffa06aa000 \
+            -s .rodata 0xffffffffa06ac080 -s .data  0xffffffffa06ad040 \
+            -s .bss 0xffffffffa06adf80 -s .text.unlikely 0xffffffffa06aa3d8
+
+    Alternatively, use the script to do it ... modcopy (see doc)
+
+7. Check to see if all is OK:
+
+    (gdb) list sp_readdir
+    125     return error;
+    126 }
+    127
+    128 int
+    129 sp_readdir(struct file *f, struct dir_context *ctx)
+    130 {
+    131     struct inode            *dip = file_inode(f);
+
+8. Set a breakpoint on mount:
+
+    (gdb) br spfs_mount
+    Breakpoint 1 at 0xffffffffa066875d: file /home/spate/spfs/kern/sp_inode.c, \
+        line 418.
+    (gdb) c
+
+9. Set up a disk or use losetup
+
+    $ sudo losetup --find --show mydevice.img
+    /dev/loop0
+
+10. Mount the filesystem:
+
+    $ sudo /home/spate/spfs/cmds/mkfs /dev/loop0
+    $ sudo mount -t spfs /dev/loop0 /mnt
+
+    and the breakpoint should be hit:
+
+    Thread 4 hit Breakpoint 1, spfs_mount (fs_type=0xffffffffa066aaa0 
+        <spfs_fs_type>, flags=0, dev_name=0xffff8881236552e0 "/dev/loop0", 
+        data=0x0 <fixed_percpu_data>) at /home/spate/spfs/kern/sp_inode.c:418
+    418	{
+    (gdb) bt
+    #0  spfs_mount (fs_type=0xffffffffa066aaa0 <spfs_fs_type>, flags=0, 
+    #1  0xffffffff8143501b in legacy_get_tree (fc=0xffff88812efc9b40) at fs/fs_
+    #2  0xffffffff813eaada in vfs_get_tree (fc=fc@entry=0xffff88812efc9b40) at
+    ...
+    #6  __do_sys_mount (data=<optimized out>, flags=0, type=<optimized out>, 
+    #7  __se_sys_mount (data=<optimized out>, flags=0, type=<optimized out>,
+    #8  __x64_sys_mount (regs=<optimized out>) at fs/namespace.c:3568
+
+
