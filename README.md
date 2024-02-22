@@ -10,6 +10,10 @@ My hope is that people will help contribute. Don't worry about formatting. I can
 
 I hope this is useful to people.
 
+## Never mind all that LaTeX Stuff ... just get me the book
+
+There will always be a file called book.pdf at the top level. That's all you need.
+
 ## Contents
 
 Here are the contents of the book (I'll add more detail later)
